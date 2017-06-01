@@ -1,8 +1,21 @@
 #!/usr/bin/env python3
 
 import tensorflow as tf
+from flags import *
 
-import mc_cnn_input as examples
+import mc_cnn_input
+
+
+bool_flag('shuffle', True,
+          """Whether to shuffle input files.""")
+int_flag('batch_size', 1000,
+         """Number of examples per batch.""")
+
+# Constants describing the training process.
+MOVING_AVERAGE_DECAY = 0.9999     # The decay to use for the moving average.
+NUM_EPOCHS_PER_DECAY = 350.0      # Epochs after which learning rate decays.
+LEARNING_RATE_DECAY_FACTOR = 0.1  # Learning rate decay factor.
+INITIAL_LEARNING_RATE = 0.1       # Initial learning rate.
 
 def _layer_summary(name,h,w,b):
     tf.summary.histogram('biases', b)
@@ -66,12 +79,62 @@ def inference(left, right, channels=1):
     fc5 = _fc_layer(fc4,300,300)
     fc6 = _fc_layer(fc5,300,300)
     
-    softmax = _fc_layer(fc6,300,2,name="softmax",activation_fn=tf.nn.softmax)
+    # defer softmax activation to loss calculation
+    id_ = lambda x, name: x
+    logits = _fc_layer(fc6,300,2,name="softmax",activation_fn=id_)
 
-    return softmax
+    return logits
+
+def loss(logits, labels):
+    cross_entropy = tf.nn.softmax_cross_entropy_with_logits(logits=logits,
+                                                            labels=labels,
+                                                            name="example_xentropy")
+    cross_entropy = tf.reduce_mean(cross_entropy)
+    tf.add_to_collection("losses", cross_entropy)
+
+    return tf.add_n(tf.get_collection('losses'), name="total_loss")
+
+def train(loss, global_step):
+    """
+    num_batches_per_epoch = NUM_EXAMPLES_PER_EPOCH_FOR_TRAIN / FLAGS.batch_size
+    decay_steps = int(num_batches_per_epoch * NUM_EPOCHS_PER_DECAY)
+
+    lr = tf.train.exponential_decay(INITIAL_LEARNING_RATE,
+                                    global_step,
+                                    decay_steps,
+                                    LEARNING_RATE_DECAY_FACTOR,
+                                    staircase=True)
+    tf.summary.scalar("learning_rate", lr)
+
+    loss_averages_op = _add_loss_summaries(loss)
+    with tf.control_dependencies([loss_averages_op]):
+        opt = tf.train.GradientDescentOptimizer(lr)
+        grads = opt.compute_gradients(total_loss)
+    """
+
+    lr = tf.constant(0.1)
+    opt = tf.train.GradientDescentOptimizer(lr)
+    grads = opt.compute_gradients(loss)
+
+    apply_gradients_op = opt.apply_gradients(grads,global_step=global_step)
+
+    """
+    for var in tf.trainable_variables():
+        tf.summary.histogram(var.op.name,var)
+
+    for grad, var in grads:
+        if grad is not None:
+            tf.summary.histogram(var.op.name+"/gradients", grad)
+    """
+
+    with tf.control_dependencies([apply_gradients_op]):
+        train_op = tf.no_op(name="train")
+
+    return train_op
+
 
 if __name__ == "__main__":
-    example_batch,label_batch = examples.example_queue(data_dir="training", num_epochs=2)
+    example_batch,label_batch = mc_cnn_input.example_queue(data_dir="training", num_epochs=2)
 
     op = inference(example_batch[:,0,:,:,:],example_batch[:,1,:,:,:])
 
