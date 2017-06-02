@@ -5,12 +5,6 @@ from flags import *
 
 import mc_cnn_input
 
-
-bool_flag('shuffle', True,
-          """Whether to shuffle input files.""")
-int_flag('batch_size', 1000,
-         """Number of examples per batch.""")
-
 # Constants describing the training process.
 MOVING_AVERAGE_DECAY = 0.9999     # The decay to use for the moving average.
 NUM_EPOCHS_PER_DECAY = 350.0      # Epochs after which learning rate decays.
@@ -18,8 +12,8 @@ LEARNING_RATE_DECAY_FACTOR = 0.1  # Learning rate decay factor.
 INITIAL_LEARNING_RATE = 0.1       # Initial learning rate.
 
 def _layer_summary(name,h,w,b):
-    tf.summary.histogram('biases', b)
-    tf.summary.histogram('weights', b)
+    #tf.summary.histogram('biases', b)
+    #tf.summary.histogram('weights', w)
     tf.summary.histogram('activations/hist', h)
     tf.summary.scalar('activations/sparsity',
                       tf.nn.zero_fraction(h))
@@ -29,7 +23,7 @@ def _bias_variable(size,name="bias"):
     return tf.Variable(init,name=name);
 
 def _weight_variable(shape,name="weights"):
-    init = tf.random_normal(shape,stddev=5e-2)
+    init = tf.random_normal(shape,stddev=5e-4)
     return tf.Variable(init,name=name)
 
 def _conv_layer(input_,shape,name="conv",activation_fn=tf.nn.relu):
@@ -69,15 +63,20 @@ def inference(left, right, channels=1):
 
         return fc1
             
+    """
+    left = tf.Print(
+            conv_layers(left),
+            [left,right],summarize=10)
+    """
     left = conv_layers(left)
     right = conv_layers(right)
 
     concat = tf.concat([left, right],axis=1)
 
-    fc3 = _fc_layer(concat,400,300)
-    fc4 = _fc_layer(fc3,300,300)
-    fc5 = _fc_layer(fc4,300,300)
-    fc6 = _fc_layer(fc5,300,300)
+    fc3 = _fc_layer(concat,400,300,name="fc3")
+    fc4 = _fc_layer(fc3,300,300,name="fc4")
+    fc5 = _fc_layer(fc4,300,300,name="fc5")
+    fc6 = _fc_layer(fc5,300,300,name="fc6")
     
     # defer softmax activation to loss calculation
     id_ = lambda x, name: x
@@ -86,9 +85,11 @@ def inference(left, right, channels=1):
     return logits
 
 def loss(logits, labels):
-    cross_entropy = tf.nn.softmax_cross_entropy_with_logits(logits=logits,
-                                                            labels=labels,
-                                                            name="example_xentropy")
+    cross_entropy = (#tf.Print(
+            tf.nn.softmax_cross_entropy_with_logits(logits=logits,
+                                                    labels=labels,
+                                                    name="example_xentropy"))#,
+            #[logits,labels], summarize=10)
     cross_entropy = tf.reduce_mean(cross_entropy)
     tf.add_to_collection("losses", cross_entropy)
 
@@ -118,14 +119,12 @@ def train(loss, global_step):
 
     apply_gradients_op = opt.apply_gradients(grads,global_step=global_step)
 
-    """
     for var in tf.trainable_variables():
         tf.summary.histogram(var.op.name,var)
 
     for grad, var in grads:
         if grad is not None:
             tf.summary.histogram(var.op.name+"/gradients", grad)
-    """
 
     with tf.control_dependencies([apply_gradients_op]):
         train_op = tf.no_op(name="train")

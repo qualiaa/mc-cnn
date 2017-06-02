@@ -18,6 +18,21 @@ string_flag("infile_regex", "(\d{6})_10.png",
 int_flag('queue_threads', 1,
          """Number of CPU threads for queuing examples.""")
 
+int_flag("n_low", 4,
+         """Lower bound for negative example offset from ground truth.""")
+int_flag("n_high", 8,
+         """Upper bound for negative example offset from ground truth.""")
+int_flag("p_high", 1,
+         """Upper bound for positive example offset from ground truth.""")
+int_flag('batch_size', 1000,
+         """Number of examples per batch.""")
+bool_flag("low_gpu_mem", False,
+          """Reduce the amount of data stored on the GPU, reducing """
+          """performance""")
+
+bool_flag('shuffle', True,
+          """Whether to shuffle input files.""")
+
 min_after_dequeue = 1000
 
 def _random_sign(shape=[], name = None):
@@ -206,14 +221,17 @@ def examples_from_stereo_pair(stereo_pair, gt, patch_size=9, channels=1):
         pos_patches = reshape_patches(pos_patches)
         neg_patches = reshape_patches(neg_patches)
 
-        # join left patches to both positive and negative matches
-        positive_examples = tf.stack([left_patches,pos_patches], axis=1)
-        negative_examples = tf.stack([left_patches,neg_patches], axis=1)
-        examples = tf.concat([positive_examples,negative_examples],axis=0)
-        one_v = tf.ones_like(gt_values)
-        zero_v = tf.zeros_like(gt_values)
-        labels = tf.concat([tf.stack([one_v,zero_v],axis=1),
-                            tf.stack([zero_v,one_v],axis=1)], axis=0)
+        # use CPU to avoid OOM on GPU
+        dev = "/cpu:0" if FLAGS.low_gpu_mem else None
+        with tf.device(dev):
+            # join left patches to both positive and negative matches
+            positive_examples = tf.stack([left_patches,pos_patches], axis=1)
+            negative_examples = tf.stack([left_patches,neg_patches], axis=1)
+            examples = tf.concat([positive_examples,negative_examples],axis=0)
+            one_v = tf.ones_like(gt_values)
+            zero_v = tf.zeros_like(gt_values)
+            labels = tf.concat([tf.stack([one_v,zero_v],axis=1),
+                                tf.stack([zero_v,one_v],axis=1)], axis=0)
         labels = tf.Print(
                 tf.identity(labels),
                 [tf.shape(examples),tf.shape(labels)],
@@ -233,26 +251,24 @@ def batch_examples(examples,labels,
         window_size=9,
         enqueue_many=True):
     with tf.name_scope("example_batches"):
+        input_tensor=[examples,labels]
+        kwargs={"shapes":[[2,window_size,window_size,channels],[2]],
+                "capacity":(min_after_dequeue + (FLAGS.batch_size *1.1) *
+                    FLAGS.queue_threads),
+                "enqueue_many":enqueue_many,
+                "batch_size":FLAGS.batch_size,
+                "num_threads":FLAGS.queue_threads}
+
         if shuffle:
             example_batch, label_batch = tf.train.shuffle_batch(
-                    [examples,labels],
-                    batch_size=FLAGS.batch_size,
-                    capacity=(min_after_dequeue + (FLAGS.batch_size *1.1) *
-                        FLAGS.queue_threads),
+                    input_tensor,
                     min_after_dequeue=min_after_dequeue,
-                    enqueue_many=enqueue_many,
-                    shapes=[[2,window_size,window_size,channels],[2]],
-                    num_threads=FLAGS.queue_threads)
+                    **kwargs)
             return example_batch, label_batch
         else:
             example_batch, label_batch = tf.train.batch(
-                    [examples,labels],
-                    batch_size=FLAGS.batch_size,
-                    capacity=(min_after_dequeue +
-                              (FLAGS.batch_size *1.1) * FLAGS.queue_threads),
-                    enqueue_many=enqueue_many,
-                    shapes=[[2,window_size,window_size,channels],[]],
-                    num_threads=FLAGS.queue_threads)
+                    input_tensor,
+                    **kwargs)
             return example_batch, label_batch
         """
         q = tf.RandomShuffleQueue(

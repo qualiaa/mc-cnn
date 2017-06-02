@@ -15,12 +15,6 @@ int_flag("max_steps", 1000000,
          """Number of training batches.""")
 int_flag("log_frequency", 10,
          """How often to print logs in terms of batches seen.""")
-int_flag("n_low", 4,
-         """Lower bound for negative example offset from ground truth.""")
-int_flag("n_high", 8,
-         """Upper bound for negative example offset from ground truth.""")
-int_flag("p_high", 1,
-         """Upper bound for positive example offset from ground truth.""")
 int_flag('num_epochs', None,
          """Number of repeated exposures to input data.""")
 bool_flag('log_device_placement', False,
@@ -29,7 +23,8 @@ bool_flag('log_device_placement', False,
 def train():
     with tf.Graph().as_default():
         global_step = tf.contrib.framework.get_or_create_global_step()
-        examples, labels = mc_cnn_input.example_queue("training")
+        examples, labels = mc_cnn_input.example_queue(
+                "training",shuffle=FLAGS.shuffle)
 
         left_examples = examples[:,0,:,:,:]
         right_examples = examples[:,1,:,:,:]
@@ -53,23 +48,26 @@ def train():
                     self._start_time = current_time
 
                     loss_value = run_values.results
-                    examples_per_sec = 0
-                    sec_per_batch = duration
+                    examples_per_sec = (FLAGS.log_frequency * 
+                            FLAGS.batch_size/duration)
+                    sec_per_batch = duration / float(FLAGS.log_frequency)
                     loss_value = run_values.results
 
-                    format_str = ("{:s}: step {:d}, loss = {:.2f}"
+                    format_str = ("{}: step {:d}, loss = {:.2f} "
                             "({:.1f} examples/sec; {:.3f} sec/batch)")
                     print (format_str.format(datetime.now(), self._step, loss_value,
                                    examples_per_sec, sec_per_batch))
 
         with tf.train.MonitoredTrainingSession(
-            checkpoint_dir=FLAGS.output_dir,
-            hooks=[tf.train.StopAtStepHook(last_step=FLAGS.max_steps),
-                   tf.train.NanTensorHook(loss),
-                   LoggerHook()],
-            config=tf.ConfigProto(
-                log_device_placement=FLAGS.log_device_placement)) as mon_sess:
-            mon_sess.run(train_op)
+                checkpoint_dir=FLAGS.output_dir,
+                hooks=[tf.train.StopAtStepHook(last_step=FLAGS.max_steps),
+                       tf.train.NanTensorHook(loss),
+                       LoggerHook()],
+                config=tf.ConfigProto(
+                    log_device_placement=FLAGS.log_device_placement)
+                ) as mon_sess:
+            while not mon_sess.should_stop():
+                mon_sess.run(train_op)
 
 def main(argv=None):
     if tf.gfile.Exists(FLAGS.output_dir):
