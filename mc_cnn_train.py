@@ -26,8 +26,10 @@ def train():
         examples, labels = mc_cnn_input.example_queue(
                 "training",shuffle=FLAGS.shuffle)
 
-        left_examples = examples[:,0,:,:,:]
-        right_examples = examples[:,1,:,:,:]
+        with tf.name_scope("left_examples"):
+            left_examples = examples[:,0,...]
+        with tf.name_scope("right_examples"):
+            right_examples = examples[:,1,...]
         logits = mc_cnn.inference(left_examples,right_examples)
         loss = mc_cnn.loss(logits,labels)
         train_op = mc_cnn.train(loss,global_step)
