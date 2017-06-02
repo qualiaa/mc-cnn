@@ -38,6 +38,13 @@ def _weight_variable(shape,name="weights"):
     init = tf.random_normal(shape,stddev=5e-4)
     return tf.Variable(init,name=name)
 
+def _relu_weight_variable(shape,name="weights"):
+    # use initialization suggested by He & al.
+    # https://arxiv.org/pdf/1502.01852.pdf
+    init = tf.random_normal(shape)*tf.sqrt(2.0/tf.to_float(tf.reduce_prod(shape)))
+    return tf.Variable(init,name=name)
+
+
 def _conv_layer(input_,shape,name="conv",activation_fn=tf.nn.relu):
     with tf.name_scope(name) as scope:
         b = _bias_variable(shape[-1])
@@ -53,7 +60,11 @@ def _fc_layer(input_,input_size,output_size,name="fc",activation_fn=tf.nn.relu):
     with tf.name_scope(name) as scope:
         weight_shape = tf.stack([input_size,output_size])
         b = _bias_variable(output_size)
-        w = _weight_variable(weight_shape)
+        weight_initializer = (_relu_weight_variable
+                if activation_fn == tf.nn.relu
+                else _weight_variable)
+
+        w = weight_initializer(weight_shape)
 
         wx = tf.matmul(input_, w)
         z = tf.add(wx,b)
