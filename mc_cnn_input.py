@@ -24,7 +24,7 @@ int_flag("n_high", 8,
          """Upper bound for negative example offset from ground truth.""")
 int_flag("p_high", 1,
          """Upper bound for positive example offset from ground truth.""")
-int_flag('batch_size', 1000,
+int_flag('batch_size', 128,
          """Number of examples per batch.""")
 bool_flag("low_gpu_mem", False,
           """Reduce the amount of data stored on the GPU, reducing """
@@ -133,9 +133,11 @@ def read_stereo_pair(filename_queue, channels=1):
                 r = tf.Print(read_image(channels,name="right_image"),
                         [[]],"Loaded next stereo pair")
 
+        """
         tf.summary.image("ground_truth",tf.to_float(tf.expand_dims(tf.expand_dims(gt,0),3)))
         tf.summary.image("left_image",tf.expand_dims(l,0))
         tf.summary.image("right_image",tf.expand_dims(r,0))
+        """
 
     stereo_pair = (l,r)
 
@@ -147,6 +149,14 @@ def examples_from_stereo_pair(stereo_pair, gt, patch_size=9, channels=1):
         gt = tf.identity(gt, name="ground_truth_image")
         zero = tf.constant(0, dtype=gt.dtype)
         image_shape = tf.to_int64(tf.shape(gt))
+
+        def normalize(i):
+            with tf.name_scope("normalize"):
+                i = i - tf.reduce_mean(i)
+                i = i / tf.sqrt(tf.reduce_mean(i**2))
+            return i
+
+        l,r = [normalize(i) for i in [l, r]]
 
         def extract_patches(t, name=None):
             """ take [x,y,channel] image
