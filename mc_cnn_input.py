@@ -101,7 +101,6 @@ def kitti_filename_queue(data_dir, capacity=30, shuffle=True, num_epochs=None):
         files = tf.train.limit_epochs(files, num_epochs)
 
 
-        #files = tf.Print(tf.reshape(files, [-1]), [files])
         files = tf.reshape(files, [-1], name="flatten")
 
         q = tf.FIFOQueue(capacity, [tf.string])
@@ -122,7 +121,7 @@ def read_stereo_pair(filename_queue, channels=1):
                 key, png = reader.read(filename_queue)
                 uint_image = tf.image.decode_png(png,channels=channels,
                                                      dtype=dtype)
-                float_image = tf.Print(tf.to_float(uint_image),[key])
+                float_image = tf.to_float(uint_image)
             return float_image
 
         gt = read_image(channels=1,dtype=tf.uint16,name="ground_truth")/256
@@ -131,7 +130,8 @@ def read_stereo_pair(filename_queue, channels=1):
         with tf.control_dependencies([gt]):
             l = read_image(channels,name="left_image")
             with tf.control_dependencies([l]):
-                r = read_image(channels,name="right_image")
+                r = tf.Print(read_image(channels,name="right_image"),
+                        [[]],"Loaded next stereo pair")
 
         tf.summary.image("ground_truth",tf.to_float(tf.expand_dims(tf.expand_dims(gt,0),3)))
         tf.summary.image("left_image",tf.expand_dims(l,0))
@@ -182,15 +182,7 @@ def examples_from_stereo_pair(stereo_pair, gt, patch_size=9, channels=1):
                     name="find_valid_indices")
             known_gt_coords = tf.gather_nd(known_gt_coords, valid_indices,
                     name="find_valid_coords")
-            gt_values = tf.Print(
-                    tf.gather_nd(gt, known_gt_coords, name="valid_gt"),
-                    [
-                        tf.reduce_max(known_gt_coords,axis=0),
-                        tf.reduce_min(known_gt_coords,axis=0),
-                        image_shape,
-                        tf.shape(left_patches)
-                    ],
-                    "Max index vs ")
+            gt_values = tf.gather_nd(gt, known_gt_coords, name="valid_gt")
 
         left_patches = tf.gather_nd(left_patches, known_gt_coords,
                                     name="index_left_patches")
@@ -232,10 +224,6 @@ def examples_from_stereo_pair(stereo_pair, gt, patch_size=9, channels=1):
             zero_v = tf.zeros_like(gt_values)
             labels = tf.concat([tf.stack([one_v,zero_v],axis=1),
                                 tf.stack([zero_v,one_v],axis=1)], axis=0)
-        labels = tf.Print(
-                tf.identity(labels),
-                [tf.shape(examples),tf.shape(labels)],
-                summarize=100)
 
         """
         tf.summary.image("left_patches",left_patches)
