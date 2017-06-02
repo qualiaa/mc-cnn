@@ -5,6 +5,7 @@ from flags import *
 
 import mc_cnn_input
 
+
 # Constants describing the training process.
 MOVING_AVERAGE_DECAY = 0.9999     # The decay to use for the moving average.
 NUM_EPOCHS_PER_DECAY = 350.0      # Epochs after which learning rate decays.
@@ -17,6 +18,17 @@ def _layer_summary(name,h,w,b):
     tf.summary.histogram('activations/hist', h)
     tf.summary.scalar('activations/sparsity',
                       tf.nn.zero_fraction(h))
+
+def _loss_summaries(loss):
+    loss_averages = tf.train.ExponentialMovingAverage(0.9, name='avg')
+    losses = tf.get_collection('losses')
+    loss_averages_op = loss_averages.apply(losses + [loss])
+
+    for l in losses + [loss]:
+        tf.summary.scalar(l.op.name + " (raw)", l)
+        tf.summary.scalar(l.op.name, loss_averages.average(l))
+
+    return loss_averages_op
 
 def _bias_variable(size,name="bias"):
     init = tf.zeros([size])
@@ -107,15 +119,13 @@ def train(loss, global_step):
                                     staircase=True)
     tf.summary.scalar("learning_rate", lr)
 
-    loss_averages_op = _add_loss_summaries(loss)
-    with tf.control_dependencies([loss_averages_op]):
-        opt = tf.train.GradientDescentOptimizer(lr)
-        grads = opt.compute_gradients(total_loss)
     """
 
-    lr = tf.constant(0.1)
-    opt = tf.train.GradientDescentOptimizer(lr)
-    grads = opt.compute_gradients(loss)
+    lr = tf.constant(0.01)
+    loss_averages_op = _loss_summaries(loss)
+    with tf.control_dependencies([loss_averages_op]):
+        opt = tf.train.GradientDescentOptimizer(lr)
+        grads = opt.compute_gradients(loss,aggregation_method=1)
 
     apply_gradients_op = opt.apply_gradients(grads,global_step=global_step)
 
