@@ -77,9 +77,45 @@ def _fc_layer(input_,input_size,output_size,name="fc",activation_fn=tf.nn.relu):
 def _flatten(input_):
     return tf.reshape(input_,[tf.shape(input_)[0],-1], name="flatten")
 
+def conv_inference(left, right, channels=1):
+    
+    def split_layers(input_):
+        with tf.name_scope("conv_layers"):
+            conv1 = _conv_layer(input_,[5,5,channels,32])
+            conv2 = _conv_layer(conv1,[5,5,32,32])
+            fc1 = _conv_layer(conv2,[1,1,32,200])
+
+        return fc1
+            
+    """
+    left = tf.Print(
+            conv_layers(left),
+            [left,right],summarize=10)
+    """
+    left = split_layers(left)
+    right = split_layers(right)
+
+    concat = tf.concat([left, right],axis=2)
+
+    def soft_relu(x, name=None):
+        with tf.name_scope(name or "soft_relu"):
+            h = tf.maximum(0.0,x) + tf.minimum(0.0, x/10)
+        return h
+
+    fc3 = _conv_layer(concat,[1,1,400,300],name="fc3", activation_fn=soft_relu)
+    fc4 = _conv_layer(fc3,[1,1,300,300],name="fc4", activation_fn=soft_relu)
+    fc5 = _conv_layer(fc4,[1,1,300,300],name="fc5", activation_fn=soft_relu)
+    fc6 = _conv_layer(fc5,[1,1,300,300],name="fc6", activation_fn=soft_relu)
+    
+    # defer softmax activation to loss calculation
+    id_ = lambda x, name: x
+    logits = _conv_layer(fc6,[1,1,300,2],name="softmax",activation_fn=id_)
+
+    return logits
+
 def inference(left, right, channels=1):
     
-    def conv_layers(input_):
+    def split_layers(input_):
         with tf.name_scope("conv_layers"):
             conv1 = _conv_layer(input_,[5,5,channels,32])
             fc1 = _fc_layer(_flatten(conv1),32*5*5,200)
@@ -92,8 +128,8 @@ def inference(left, right, channels=1):
             conv_layers(left),
             [left,right],summarize=10)
     """
-    left = conv_layers(left)
-    right = conv_layers(right)
+    left = split_layers(left)
+    right = split_layers(right)
 
     concat = tf.concat([left, right],axis=1)
 
