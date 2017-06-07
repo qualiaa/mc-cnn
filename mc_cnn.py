@@ -77,7 +77,6 @@ def _fc_layer(input_,input_size,output_size,name="fc",activation_fn=tf.nn.relu):
 def _flatten(input_):
     return tf.reshape(input_,[tf.shape(input_)[0],-1], name="flatten")
 
-
 def inference(left, right, channels=1):
     
     def conv_layers(input_):
@@ -124,6 +123,12 @@ def loss(logits, labels):
     tf.add_to_collection("losses", cross_entropy)
 
     return tf.add_n(tf.get_collection('losses'), name="total_loss")
+
+def accuracy(logits, labels):
+    results = tf.nn.softmax(logits)
+    correct_prediction = tf.equal(tf.argmax(results,1),tf.argmax(labels,1))
+    accuracy = tf.reduce_mean(tf.to_float(correct_prediction))
+    return accuracy
 
 def train(loss, global_step):
     """
