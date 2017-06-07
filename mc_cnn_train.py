@@ -24,7 +24,7 @@ def train():
     with tf.Graph().as_default():
         global_step = tf.contrib.framework.get_or_create_global_step()
         examples, labels = mc_cnn_input.example_queue(
-                "training",shuffle=FLAGS.shuffle)
+                "training",FLAGS.batch_size,shuffle=FLAGS.shuffle)
 
         with tf.name_scope("left_examples"):
             left_examples = examples[:,0,...]
@@ -59,6 +59,8 @@ def train():
                             "({:.1f} examples/sec; {:.3f} sec/batch)")
                     print (format_str.format(datetime.now(), self._step, loss_value,
                                    examples_per_sec, sec_per_batch))
+
+
 
         with tf.train.MonitoredTrainingSession(
                 checkpoint_dir=FLAGS.output_dir,

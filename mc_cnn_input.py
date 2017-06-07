@@ -11,7 +11,7 @@ from operator import add, truth
 from functools import reduce
 from itertools import repeat
 
-string_flag("kitti_root", "../../stereo/kitti_stereo_2012",
+string_flag("kitti_root", "kitti_stereo_2012",
             """Relative path from execution dir to KITTI dataset.""")
 string_flag("infile_regex", "(\d{6})_10.png",
             """Regular expression describing input image filenames.""")
@@ -230,10 +230,17 @@ def examples_from_stereo_pair(stereo_pair, gt, patch_size=9, channels=1):
             positive_examples = tf.stack([left_patches,pos_patches], axis=1)
             negative_examples = tf.stack([left_patches,neg_patches], axis=1)
             examples = tf.concat([positive_examples,negative_examples],axis=0)
+
             one_v = tf.ones_like(gt_values)
             zero_v = tf.zeros_like(gt_values)
             labels = tf.concat([tf.stack([one_v,zero_v],axis=1),
                                 tf.stack([zero_v,one_v],axis=1)], axis=0)
+
+            # examples and labels must be the same length
+            tf.assert_equal(tf.shape(examples)[0],tf.shape(labels)[0])
+            shuffle_indices = tf.random_shuffle(tf.range(tf.shape(examples)[0]))
+            examples = tf.gather(examples,shuffle_indices)
+            labels = tf.gather(labels,shuffle_indices)
 
         """
         tf.summary.image("left_patches",left_patches)
@@ -244,19 +251,20 @@ def examples_from_stereo_pair(stereo_pair, gt, patch_size=9, channels=1):
     return examples,labels
 
 def batch_examples(examples,labels,
+        batch_size,
         shuffle=False,
         channels=1,
         window_size=9,
         enqueue_many=True):
-    with tf.name_scope("example_batches"):
-        input_tensor=[examples,labels]
-        kwargs={"shapes":[[2,window_size,window_size,channels],[2]],
-                "capacity":(min_after_dequeue + (FLAGS.batch_size *1.1) *
-                    FLAGS.queue_threads),
-                "enqueue_many":enqueue_many,
-                "batch_size":FLAGS.batch_size,
-                "num_threads":FLAGS.queue_threads}
+    input_tensor=[examples,labels]
+    kwargs={"shapes":[[2,window_size,window_size,channels],[2]],
+            "capacity":(min_after_dequeue + (FLAGS.batch_size *1.1) *
+                FLAGS.queue_threads),
+            "enqueue_many":enqueue_many,
+            "batch_size":batch_size,
+            "num_threads":FLAGS.queue_threads}
 
+    with tf.name_scope("example_batches"):
         if shuffle:
             example_batch, label_batch = tf.train.shuffle_batch(
                     input_tensor,
@@ -286,6 +294,7 @@ def batch_examples(examples,labels,
     """
 
 def example_queue(data_dir,
+        batch_size,
         shuffle=True,
         num_epochs=None,
         patch_size=9,
@@ -296,4 +305,4 @@ def example_queue(data_dir,
     stereo_pair, gt = read_stereo_pair(filename_queue,channels=color_channels)
     examples, labels = examples_from_stereo_pair(stereo_pair,gt,
                                                  channels=color_channels)
-    return batch_examples(examples,labels,shuffle=shuffle)
+    return batch_examples(examples,labels,batch_size,shuffle=shuffle)
