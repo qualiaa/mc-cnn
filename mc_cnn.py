@@ -31,16 +31,18 @@ def _loss_summaries(loss):
     return loss_averages_op
 
 def _bias_variable(size,name="bias"):
-    init = tf.zeros([size])
+    #init = tf.zeros([size])
+    init = tf.random_normal([size],stddev=5e-1)
     return tf.Variable(init,name=name);
 
 def _weight_variable(shape,name="weights"):
-    init = tf.random_normal(shape,stddev=5e-4)
+    init = tf.random_normal(shape,stddev=5e-1)
     return tf.Variable(init,name=name)
 
 def _relu_weight_variable(shape,name="weights"):
     # use initialization suggested by He & al.
     # https://arxiv.org/pdf/1502.01852.pdf
+    return _weight_variable(shape,name)
     init = tf.random_normal(shape)*tf.sqrt(2.0/tf.to_float(tf.reduce_prod(shape)))
     return tf.Variable(init,name=name)
 
@@ -96,10 +98,15 @@ def inference(left, right, channels=1):
 
     concat = tf.concat([left, right],axis=1)
 
-    fc3 = _fc_layer(concat,400,300,name="fc3")
-    fc4 = _fc_layer(fc3,300,300,name="fc4")
-    fc5 = _fc_layer(fc4,300,300,name="fc5")
-    fc6 = _fc_layer(fc5,300,300,name="fc6")
+    def soft_relu(x, name=None):
+        with tf.name_scope(name or "soft_relu"):
+            h = tf.maximum(0.0,x) + tf.minimum(0.0, x/10)
+        return h
+
+    fc3 = _fc_layer(concat,400,300,name="fc3", activation_fn=soft_relu)
+    fc4 = _fc_layer(fc3,300,300,name="fc4", activation_fn=soft_relu)
+    fc5 = _fc_layer(fc4,300,300,name="fc5", activation_fn=soft_relu)
+    fc6 = _fc_layer(fc5,300,300,name="fc6", activation_fn=soft_relu)
     
     # defer softmax activation to loss calculation
     id_ = lambda x, name: x
@@ -132,7 +139,7 @@ def train(loss, global_step):
 
     """
 
-    lr = tf.constant(0.01)
+    lr = tf.constant(0.00001)
     loss_averages_op = _loss_summaries(loss)
     with tf.control_dependencies([loss_averages_op]):
         opt = tf.train.GradientDescentOptimizer(lr)
