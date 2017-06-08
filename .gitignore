@@ -2,3 +2,6 @@ logs/
 *.sw*
 __pycache__/
 *.pyc
+results/
+kitti_stereo_2012/
+*.csv
