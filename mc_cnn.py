@@ -31,28 +31,45 @@ def _loss_summaries(loss):
     return loss_averages_op
 
 def _bias_variable(size,name="bias"):
-    #init = tf.zeros([size])
-    init = tf.random_normal([size],stddev=5e-1)
+    init = tf.zeros([size])
     return tf.Variable(init,name=name);
 
+def _fan_in(shape):
+    return tf.to_float(tf.reduce_prod(shape[:-1]))
+
+def _leaky_relu(x, name=None):
+    with tf.name_scope(name or "leaky_relu"):
+        h = tf.maximum(0.0,x) + tf.minimum(0.0, x/10)
+    return h
+
 def _weight_variable(shape,name="weights"):
-    init = tf.random_normal(shape,stddev=5e-1)
+    fan_in = _fan_in(shape)
+    stddev=tf.sqrt(1.0/fan_in)
+    init = tf.random_normal(shape,stddev=stddev)
     return tf.Variable(init,name=name)
 
 def _relu_weight_variable(shape,name="weights"):
     # use initialization suggested by He & al.
     # https://arxiv.org/pdf/1502.01852.pdf
-    return _weight_variable(shape,name)
-    init = tf.random_normal(shape)*tf.sqrt(2.0/tf.to_float(tf.reduce_prod(shape)))
+    #return _weight_variable(shape,name)
+    fan_in = _fan_in(shape)
+    stddev=tf.sqrt(2.0/fan_in)
+    init = tf.random_normal(shape,stddev=stddev)
     return tf.Variable(init,name=name)
 
+def _appropriate_weight_initializer(act_fn):
+    return (_relu_weight_variable
+            if act_fn==tf.nn.relu or act_fn==_leaky_relu
+            else _weight_variable)
 
-def _conv_layer(input_,shape,name="conv",activation_fn=tf.nn.relu):
+def _conv_layer(input_,shape,name="conv",activation_fn=tf.nn.relu,padding="SAME"):
     with tf.name_scope(name) as scope:
         b = _bias_variable(shape[-1])
-        w = _weight_variable(shape)
 
-        wx = tf.nn.conv2d(input_,w,strides=[1,1,1,1],padding="VALID")
+        weight_fn = _appropriate_weight_initializer(activation_fn)
+        w = weight_fn(shape)
+
+        wx = tf.nn.conv2d(input_,w,strides=[1,1,1,1],padding=padding)
         z = tf.add(wx,b)
         activations = activation_fn(z, name=scope)
         _layer_summary(scope,activations,w,b)
@@ -62,11 +79,9 @@ def _fc_layer(input_,input_size,output_size,name="fc",activation_fn=tf.nn.relu):
     with tf.name_scope(name) as scope:
         weight_shape = tf.stack([input_size,output_size])
         b = _bias_variable(output_size)
-        weight_initializer = (_relu_weight_variable
-                if activation_fn == tf.nn.relu
-                else _weight_variable)
 
-        w = weight_initializer(weight_shape)
+        weight_fn = _appropriate_weight_initializer(activation_fn)
+        w = weight_fn(weight_shape)
 
         wx = tf.matmul(input_, w)
         z = tf.add(wx,b)
@@ -97,11 +112,6 @@ def conv_inference(left, right, channels=1):
 
     concat = tf.concat([left, right],axis=2)
 
-    def soft_relu(x, name=None):
-        with tf.name_scope(name or "soft_relu"):
-            h = tf.maximum(0.0,x) + tf.minimum(0.0, x/10)
-        return h
-
     fc3 = _conv_layer(concat,[1,1,400,300],name="fc3", activation_fn=soft_relu)
     fc4 = _conv_layer(fc3,[1,1,300,300],name="fc4", activation_fn=soft_relu)
     fc5 = _conv_layer(fc4,[1,1,300,300],name="fc5", activation_fn=soft_relu)
@@ -118,10 +128,10 @@ def inference(left, right, channels=1):
     def split_layers(input_):
         with tf.name_scope("conv_layers"):
             conv1 = _conv_layer(input_,[5,5,channels,32])
-            fc1 = _fc_layer(_flatten(conv1),32*5*5,200)
+            fc1 = _fc_layer(_flatten(conv1),32*9*9,200)
             fc2 = _fc_layer(fc1,200,200)
 
-        return fc1
+        return fc2
             
     """
     left = tf.Print(
@@ -133,15 +143,18 @@ def inference(left, right, channels=1):
 
     concat = tf.concat([left, right],axis=1)
 
+    act_fn = tf.nn.relu
+    """
     def soft_relu(x, name=None):
         with tf.name_scope(name or "soft_relu"):
             h = tf.maximum(0.0,x) + tf.minimum(0.0, x/10)
         return h
+    """
 
-    fc3 = _fc_layer(concat,400,300,name="fc3", activation_fn=soft_relu)
-    fc4 = _fc_layer(fc3,300,300,name="fc4", activation_fn=soft_relu)
-    fc5 = _fc_layer(fc4,300,300,name="fc5", activation_fn=soft_relu)
-    fc6 = _fc_layer(fc5,300,300,name="fc6", activation_fn=soft_relu)
+    fc3 = _fc_layer(concat,400,300,name="fc3", activation_fn=act_fn)
+    fc4 = _fc_layer(fc3,300,300,name="fc4", activation_fn=act_fn)
+    fc5 = _fc_layer(fc4,300,300,name="fc5", activation_fn=act_fn)
+    fc6 = _fc_layer(fc5,300,300,name="fc6", activation_fn=act_fn)
     
     # defer softmax activation to loss calculation
     id_ = lambda x, name: x
@@ -166,6 +179,24 @@ def accuracy(logits, labels):
     accuracy = tf.reduce_mean(tf.to_float(correct_prediction))
     return accuracy
 
+def current_epoch():
+    return tf.get_collection(tf.GraphKeys.LOCAL_VARIABLES,
+                             "filename_queue/limit_epochs/epochs")[0]
+
+def _learning_rate(epoch_op):
+    with tf.name_scope("learning_rate"):
+        """
+        lr = tf.Variable(0.01)
+        """
+        lr1 = lambda:tf.constant(0.01)
+        lr2 = lambda:tf.constant(0.001)
+        lr3 = lambda:tf.constant(0.0001)
+        lr = tf.case([(tf.greater_equal(epoch_op, 15),lr3),
+                      (tf.greater_equal(epoch_op, 13),lr2)],
+                     default=lr1)
+    return lr
+
+
 def train(loss, global_step):
     """
     num_batches_per_epoch = NUM_EXAMPLES_PER_EPOCH_FOR_TRAIN / FLAGS.batch_size
@@ -180,7 +211,8 @@ def train(loss, global_step):
 
     """
 
-    lr = tf.constant(0.00001)
+    lr = _learning_rate(current_epoch())
+
     loss_averages_op = _loss_summaries(loss)
     with tf.control_dependencies([loss_averages_op]):
         opt = tf.train.GradientDescentOptimizer(lr)
