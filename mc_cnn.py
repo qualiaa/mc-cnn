@@ -65,9 +65,15 @@ def _appropriate_weight_initializer(act_fn):
             if act_fn==tf.nn.relu or act_fn==_leaky_relu
             else _weight_variable)
 
+def _linear(input_,w,b,act_fn=tf.nn.relu):
+    wx = tf.matmul(input_, w)
+    activations = act_fn(wx + b,name="activations")
+    _layer_summary(activations,w,b)
+    return activations
+
 def _convolve(input_,w,b,act_fn=tf.nn.relu,padding="SAME"):
     wx = tf.nn.conv2d(input_,w,strides=[1,1,1,1],padding=padding)
-    activations = act_fn(wx + b,name="activation")
+    activations = act_fn(wx + b,name="activations")
     _layer_summary(activations,w,b)
     return activations
 
@@ -79,6 +85,7 @@ def _conv_layer(input_,shape,name="conv",act_fn=tf.nn.relu,padding="SAME"):
         weight_fn = _appropriate_weight_initializer(act_fn)
         w = weight_fn(shape)
 
+        # calculate activations
         activations = _convolve(input_,w,b,act_fn,padding)
     return activations
 
@@ -91,17 +98,15 @@ def _fc_layer(input_,input_size,output_size,name="fc",act_fn=tf.nn.relu):
         weight_fn = _appropriate_weight_initializer(act_fn)
         w = weight_fn(weight_shape)
 
-        # calculation
-        wx = tf.matmul(input_, w)
-        activations = act_fn(wx + b, name=scope)
-        _layer_summary(activations,w,b)
+        # calculate activations
+        activations = _linear(input_,w,b)
     return activations
 
 def _flatten(input_):
     return tf.reshape(input_,[tf.shape(input_)[0],-1], name="flatten")
 
 def conv_inference(left, right, channels=1):
-    
+
     with tf.name_scope("tied_layers"):
         with tf.name_scope("tied_weights"):
             tied_weights1 = _relu_weight_variable([5,5,channels,32])
@@ -132,7 +137,7 @@ def conv_inference(left, right, channels=1):
     fc3 = _conv_layer(fc2,[1,1,300,300],name="fc3", act_fn=act_fn)
     fc4 = _conv_layer(fc3,[1,1,300,300],name="fc4", act_fn=act_fn)
     fc5 = _conv_layer(fc4,[1,1,300,300],name="fc5", act_fn=act_fn)
-    
+
     # defer softmax activation to loss calculation
     id_ = lambda x, name: x
     logits = _conv_layer(fc5,[1,1,300,2],name="softmax",act_fn=id_)
@@ -140,24 +145,29 @@ def conv_inference(left, right, channels=1):
     return logits
 
 def inference(left, right, channels=1):
-    
-    def split_layers(input_):
-        with tf.name_scope("conv_layers"):
-            conv1 = _conv_layer(input_,[5,5,channels,32])
-            fc1 = _fc_layer(_flatten(conv1),32*9*9,200)
-            fc2 = _fc_layer(fc1,200,200)
+    with tf.name_scope("tied_layers"):
+        with tf.name_scope("tied_weights"):
+            tied_weights1 = _relu_weight_variable([5,5,channels,32])
+            tied_weights2 = _relu_weight_variable([32*9*9,200])
+            tied_weights3 = _relu_weight_variable([200,200])
 
-        return fc2
-            
-    """
-    left = tf.Print(
-            conv_layers(left),
-            [left,right],summarize=10)
-    """
-    left = split_layers(left)
-    right = split_layers(right)
+        def tied_layers(input_):
+            with tf.name_scope("conv1"):
+                b = _bias_variable(32)
+                conv1 = _convolve(input_,tied_weights1,b,padding="VALID")
+            with tf.name_scope("fc1"):
+                b = _bias_variable(200)
+                fc1 = _linear(conv1,tied_weights2,b)
+            with tf.name_scope("fc2"):
+                b = _bias_variable(200)
+                fc2 = _linear(fc1,tied_weights3,b)
+            return fc2
 
-    concat = tf.concat([left, right],axis=1)
+        with tf.name_scope("left"):
+            left = tied_layers(left)
+        with tf.name_scope("right"):
+            right = tied_layers(right)
+        concat = tf.concat([left, right],axis=1)
 
     act_fn = tf.nn.relu
     """
@@ -171,7 +181,7 @@ def inference(left, right, channels=1):
     fc4 = _fc_layer(fc3,300,300,name="fc4", act_fn=act_fn)
     fc5 = _fc_layer(fc4,300,300,name="fc5", act_fn=act_fn)
     fc6 = _fc_layer(fc5,300,300,name="fc6", act_fn=act_fn)
-    
+
     # defer softmax activation to loss calculation
     id_ = lambda x, name: x
     logits = _fc_layer(fc6,300,2,name="softmax",act_fn=id_)
