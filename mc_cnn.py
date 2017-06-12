@@ -96,8 +96,8 @@ def conv_inference(left, right, channels=1):
     
     def split_layers(input_):
         with tf.name_scope("conv_layers"):
-            conv1 = _conv_layer(input_,[5,5,channels,32])
-            conv2 = _conv_layer(conv1,[5,5,32,32])
+            conv1 = _conv_layer(input_,[5,5,channels,32],padding="VALID")
+            conv2 = _conv_layer(conv1,[5,5,32,32],padding="VALID")
             fc1 = _conv_layer(conv2,[1,1,32,200])
 
         return fc1
@@ -110,16 +110,18 @@ def conv_inference(left, right, channels=1):
     left = split_layers(left)
     right = split_layers(right)
 
-    concat = tf.concat([left, right],axis=2)
+    concat = tf.concat([left, right],axis=3)
 
-    fc3 = _conv_layer(concat,[1,1,400,300],name="fc3", activation_fn=soft_relu)
-    fc4 = _conv_layer(fc3,[1,1,300,300],name="fc4", activation_fn=soft_relu)
-    fc5 = _conv_layer(fc4,[1,1,300,300],name="fc5", activation_fn=soft_relu)
-    fc6 = _conv_layer(fc5,[1,1,300,300],name="fc6", activation_fn=soft_relu)
+    act_fn = tf.nn.relu
+
+    fc2 = _conv_layer(concat,[1,1,400,300],name="fc2", activation_fn=act_fn)
+    fc3 = _conv_layer(fc2,[1,1,300,300],name="fc2", activation_fn=act_fn)
+    fc4 = _conv_layer(fc3,[1,1,300,300],name="fc3", activation_fn=act_fn)
+    fc5 = _conv_layer(fc4,[1,1,300,300],name="fc4", activation_fn=act_fn)
     
     # defer softmax activation to loss calculation
     id_ = lambda x, name: x
-    logits = _conv_layer(fc6,[1,1,300,2],name="softmax",activation_fn=id_)
+    logits = _conv_layer(fc5,[1,1,300,2],name="softmax",activation_fn=id_)
 
     return logits
 
