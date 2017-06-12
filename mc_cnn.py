@@ -155,6 +155,7 @@ def inference(left, right, channels=1):
             with tf.name_scope("conv1"):
                 b = _bias_variable(32)
                 conv1 = _convolve(input_,tied_weights1,b,padding="VALID")
+                conv1 = _flatten(conv1)
             with tf.name_scope("fc1"):
                 b = _bias_variable(200)
                 fc1 = _linear(conv1,tied_weights2,b)
