@@ -21,6 +21,8 @@ bool_flag('log_device_placement', False,
           """Whether to log device placement.""")
 int_flag("validation_steps", 10000,
          """Number of batches between evaluations""")
+bool_flag("conv", False,
+         """Use fully convolutional architecture""")
 
 def validation():
     # XXX: Very hacky to use large batch rather than full validation set.
@@ -49,7 +51,11 @@ def train():
             left_examples = examples[:,0,...]
         with tf.name_scope("right_examples"):
             right_examples = examples[:,1,...]
-        logits = mc_cnn.inference(left_examples,right_examples)
+        
+        inference = mc_cnn.conv_inference if FLAGS.conv else mc_cnn.inference
+
+        logits = inference(left_examples,right_examples)
+
         loss = mc_cnn.loss(logits,labels)
         train_op = mc_cnn.train(loss,global_step)
 
