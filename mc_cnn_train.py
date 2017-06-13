@@ -24,7 +24,7 @@ int_flag("validation_steps", 10000,
 bool_flag("conv", False,
          """Use fully convolutional architecture""")
 
-def validation():
+def validation(inference_fn=mc_cnn.inference):
     # XXX: Very hacky to use large batch rather than full validation set.
     # Need to look into tf.contrib.data.Dataset for iterable queue
     batch_size = 100
@@ -36,7 +36,7 @@ def validation():
         left_examples = validation_examples[:,0,...]
         right_examples = validation_examples[:,1,...]
 
-        validation_logits = mc_cnn.inference(left_examples,right_examples)
+        validation_logits = inference_fn(left_examples,right_examples)
         accuracy = mc_cnn.accuracy(validation_logits,validation_labels)
     return accuracy
 
@@ -59,7 +59,7 @@ def train():
         loss = mc_cnn.loss(logits,labels)
         train_op = mc_cnn.train(loss,global_step)
 
-        validation_accuracy = validation()
+        validation_accuracy = validation(inference)
 
         epoch_op = mc_cnn.current_epoch()
 

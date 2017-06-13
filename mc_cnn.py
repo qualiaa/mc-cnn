@@ -145,6 +145,7 @@ def conv_inference(left, right, channels=1):
     return logits
 
 def inference(left, right, channels=1):
+    """
     with tf.name_scope("tied_layers"):
         with tf.name_scope("tied_weights"):
             tied_weights1 = _relu_weight_variable([5,5,channels,32])
@@ -172,10 +173,12 @@ def inference(left, right, channels=1):
 
     act_fn = tf.nn.relu
     """
+    """
     def soft_relu(x, name=None):
         with tf.name_scope(name or "soft_relu"):
             h = tf.maximum(0.0,x) + tf.minimum(0.0, x/10)
         return h
+    """
     """
 
     fc3 = _fc_layer(concat,400,300,name="fc3", act_fn=act_fn)
@@ -188,6 +191,8 @@ def inference(left, right, channels=1):
     logits = _fc_layer(fc6,300,2,name="softmax",act_fn=id_)
 
     return logits
+    """
+    pass
 
 def loss(logits, labels):
     cross_entropy = (#tf.Print(
@@ -201,7 +206,9 @@ def loss(logits, labels):
     return tf.add_n(tf.get_collection('losses'), name="total_loss")
 
 def accuracy(logits, labels):
+    print(logits.shape)
     results = tf.nn.softmax(logits)
+    print(results.shape)
     correct_prediction = tf.equal(tf.argmax(results,1),tf.argmax(labels,1))
     accuracy = tf.reduce_mean(tf.to_float(correct_prediction))
     return accuracy

@@ -223,6 +223,9 @@ def examples_from_stereo_pair(stereo_pair, gt, patch_size=9, channels=1):
         pos_patches = reshape_patches(pos_patches)
         neg_patches = reshape_patches(neg_patches)
 
+        tf.summary.image("pos_patches",pos_patches)
+        tf.summary.image("neg_patches",neg_patches)
+
         # use CPU to avoid OOM on GPU
         dev = "/cpu:0" if FLAGS.low_gpu_mem else None
         with tf.device(dev):
