@@ -13,6 +13,9 @@ import matplotlib.cm
 import matplotlib.pyplot as plt
 import random as rand
 import png
+import time
+
+import tensorflow as tf
 
 patch_size = 9
 max_disparity = 128
@@ -147,7 +150,7 @@ def display(left_patches,right_patches,labels):
     
 
 def generate_examples_and_labels(gt,left,right, patch_size):
-    gt = gt.astype(np.int32,copy=False)
+    gt = gt.astype(np.int16,copy=False)
 
     right_patch_width = patch_size + max_disparity 
     right_patch_offset = -right_patch_width//2 + patch_size//2
@@ -192,30 +195,70 @@ def write_png(path,arr):
         w = png.Writer(*arr.shape[::-1],greyscale=True)
         w.write(f,arr)
 
+def write_example(example,path):
+    left,right,label=example
+    #write_png(path.format(str(instance_count),"left"),left)
+    #write_png(path.format(str(instance_count),"right"),right)
+    #write_png(path.format(str(instance_count),"label"),
+           #np.expand_dims(label,axis=0))
+
+def _float_feature(value):
+    return tf.train.Feature(float_list=tf.train.FloatList(value=[value]))
+
+def _floatlist_feature(value):
+    return tf.train.Feature(float_list=tf.train.FloatList(value=value))
+    
+    
+def _int64_feature(value):
+    return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
+    
+def _bytes_feature(value):
+    return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
+
 if __name__ == "__main__":
-    instance_count = 0
     for dataset in datasets:
         folder = os.path.join(output_dir,dataset)
         os.makedirs(folder, mode=0o755, exist_ok=True)
         if dataset != "testing":
             file_lists = _sorted_file_lists(os.path.join(input_dir,dataset),subdirs)
             file_count = 0
-            for single_instance in file_lists:
-                print("Processing file {} out of {}".format(file_count,
-                                                            len(file_lists)))
-                examples_and_labels = generate_examples_and_labels(
-                        *[imread(x)/255 for x in single_instance], patch_size)
 
-                z = zip(*examples_and_labels)
-                for left,right,label in z:
-                    path = os.path.join(folder,"{}_{}.png")
-                    write_png(path.format(str(instance_count),"left"),left)
-                    write_png(path.format(str(instance_count),"right"),right)
-                    write_png(path.format(str(instance_count),"label"),
-                           np.expand_dims(label,axis=0))
-                    instance_count += 1
-                del examples_and_labels, z 
-                file_count += 1
+            output_filename = str(dataset+".tfrecord")
+            compression = tf.python_io.TFRecordCompressionType.ZLIB
+            options = tf.python_io.TFRecordOptions(compression)
+
+            with tf.python_io.TFRecordWriter(path=output_filename,
+                                             options=options) as writer:
+                for example_files in file_lists:
+                    start_time = time.time()
+                    print("Processing file {} out of {}".format(file_count,
+                                                                len(file_lists)))
+                    gt = (imread(example_files[0])/255).astype(np.int16,copy=False)
+                    left = imread(example_files[1])
+                    right = imread(example_files[2])
+                    examples_and_labels = generate_examples_and_labels(
+                            left,right,gt,patch_size)
+                    del left,right,gt
+
+                    z = zip(*examples_and_labels)
+                    del examples_and_labels
+                    instance_count=0
+                    file_path=os.path.basename(example_files[1])
+                    for left_patch,right_patch,label in z:
+                        #path = os.path.join(folder,"{}_{}.png")
+                        #write_example(example,path)
+                        features = tf.train.Features(feature={
+                            'left_image_path': _bytes_feature(file_path.encode("ascii")),
+                            'left': _bytes_feature(left_patch.tobytes()),
+                            'right': _bytes_feature(right_patch.tobytes()),
+                            'label': _floatlist_feature(label)})
+                        example = tf.train.Example(features=features)
+                        writer.write(example.SerializeToString())
+                        instance_count += 1
+                    print("Generated {} examples in {} s".format(instance_count,
+                        time.time()-start_time))
+                    del z
+                    file_count += 1
 
         else:
             pass
