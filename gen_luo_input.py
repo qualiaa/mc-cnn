@@ -23,6 +23,9 @@ input_dir = "kitti_stereo_2012"
 output_dir = "luo_data"
 infile_regex = "(\d{6})_10.png"
 
+output_compression = tf.python_io.TFRecordCompressionType.ZLIB
+output_options = tf.python_io.TFRecordOptions(output_compression)
+
 datasets = ["testing","training","validation"]
 subdirs = ["disp_occ","image_0","image_1"]
 
@@ -73,7 +76,7 @@ def extract_patches(image,patch_shape,patch_offset=None,sentinel=0,dtype=None):
 
     for y in np.arange(output_shape[0]):
         for x in np.arange(output_shape[1]):
-            y0 = y - hs[0] + po[0]; y1 = y + hs[0] + po[0] 
+            y0 = y - hs[0] + po[0]; y1 = y + hs[0] + po[0]
             x0 = x - hs[1] + po[1]; x1 = x + hs[1] + po[1]
             y0_edge = y0 < 0; x0_edge = x0 < 0
             y1_edge = y1 >= image.shape[0]; x1_edge = x1 >= image.shape[1]
@@ -114,7 +117,7 @@ def extract_patches(image,patch_shape,patch_offset=None,sentinel=0,dtype=None):
                 """
 
                 output[y,x,oy0:oy1,ox0:ox1] = image[iy0:iy1,ix0:ix1]
-                
+
 
                 """
                 for py in np.arange(patch_shape[0]):
@@ -147,12 +150,12 @@ def display(left_patches,right_patches,labels):
         one_example(left_patches[i,:,:],right_patches[i,:,:],labels[i,:])
     plt.show()
 
-    
+
 
 def generate_examples_and_labels(gt,left,right, patch_size):
     gt = gt.astype(np.int16,copy=False)
 
-    right_patch_width = patch_size + max_disparity 
+    right_patch_width = patch_size + max_disparity
     right_patch_offset = -right_patch_width//2 + patch_size//2
 
     x = np.meshgrid(range(gt.shape[1]),range(gt.shape[0]))[0]
@@ -188,7 +191,7 @@ def generate_examples_and_labels(gt,left,right, patch_size):
     #input()
 
     return left_patches,right_patches,labels
-                
+
 # write_png = imsave
 def write_png(path,arr):
     with open(path, "wb") as f:
@@ -207,11 +210,11 @@ def _float_feature(value):
 
 def _floatlist_feature(value):
     return tf.train.Feature(float_list=tf.train.FloatList(value=value))
-    
-    
+
+
 def _int64_feature(value):
     return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
-    
+
 def _bytes_feature(value):
     return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
 
@@ -223,42 +226,40 @@ if __name__ == "__main__":
             file_lists = _sorted_file_lists(os.path.join(input_dir,dataset),subdirs)
             file_count = 0
 
-            output_filename = str(dataset+".tfrecord")
-            compression = tf.python_io.TFRecordCompressionType.ZLIB
-            options = tf.python_io.TFRecordOptions(compression)
+            for example_files in file_lists:
+                file_count += 1
+                output_filename=os.path.basename(example_files[1]).replace(".png",".tfrecord")
+                output_path = os.path.join(output_dir,dataset,output_filename)
+                if os.access(output_path,os.F_OK):
+                    continue
 
-            with tf.python_io.TFRecordWriter(path=output_filename,
-                                             options=options) as writer:
-                for example_files in file_lists:
-                    start_time = time.time()
-                    print("Processing file {} out of {}".format(file_count,
-                                                                len(file_lists)))
-                    gt = (imread(example_files[0])/255).astype(np.int16,copy=False)
-                    left = imread(example_files[1])
-                    right = imread(example_files[2])
-                    examples_and_labels = generate_examples_and_labels(
-                            left,right,gt,patch_size)
-                    del left,right,gt
+                start_time = time.time()
+                print("Processing file {} out of {}".format(file_count,
+                                                            len(file_lists)))
+                gt = (imread(example_files[0])/255).astype(np.int16,copy=False)
+                left = imread(example_files[1])
+                right = imread(example_files[2])
+                examples_and_labels = generate_examples_and_labels(
+                        left,right,gt,patch_size)
+                del left,right,gt
 
-                    z = zip(*examples_and_labels)
-                    del examples_and_labels
-                    instance_count=0
-                    file_path=os.path.basename(example_files[1])
-                    for left_patch,right_patch,label in z:
+                instance_count=0
+                with tf.python_io.TFRecordWriter(path=output_path,
+                                                 options=output_options) as writer:
+                    examples_and_labels = zip(*examples_and_labels)
+                    for left_patch,right_patch,label in examples_and_labels:
+                        instance_count += 1
                         #path = os.path.join(folder,"{}_{}.png")
                         #write_example(example,path)
                         features = tf.train.Features(feature={
-                            'left_image_path': _bytes_feature(file_path.encode("ascii")),
                             'left': _bytes_feature(left_patch.tobytes()),
                             'right': _bytes_feature(right_patch.tobytes()),
                             'label': _floatlist_feature(label)})
                         example = tf.train.Example(features=features)
                         writer.write(example.SerializeToString())
-                        instance_count += 1
-                    print("Generated {} examples in {} s".format(instance_count,
-                        time.time()-start_time))
-                    del z
-                    file_count += 1
+                print("Generated {} examples in {} s".format(instance_count,
+                    time.time()-start_time))
+                del examples_and_labels
 
         else:
             pass
