@@ -153,8 +153,6 @@ def display(left_patches,right_patches,labels):
 
 
 def generate_examples_and_labels(gt,left,right, patch_size):
-    gt = gt.astype(np.int16,copy=False)
-
     right_patch_width = patch_size + max_disparity
     right_patch_offset = -right_patch_width//2 + patch_size//2
 
@@ -239,8 +237,10 @@ if __name__ == "__main__":
                 gt = (imread(example_files[0])/255).astype(np.int16,copy=False)
                 left = imread(example_files[1])
                 right = imread(example_files[2])
+                if left.ndim == 3: left = left[:,:,0]
+                if right.ndim == 3: left = left[:,:,0]
                 examples_and_labels = generate_examples_and_labels(
-                        left,right,gt,patch_size)
+                        gt,left,right,patch_size)
                 del left,right,gt
 
                 instance_count=0
