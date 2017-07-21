@@ -89,6 +89,8 @@ def _sorted_file_list(data_dir):
 
     # convert back to filenames with full paths
     file_list = [os.path.join(data_dir,m.string) for m in file_list]
+    print(file_list)
+
 
     return file_list
 
@@ -105,7 +107,8 @@ def read_record_file(filename_queue,patch_size=9,max_disparity=128,channels=1):
                 'label': tf.FixedLenFeature((128),tf.float32)
             })
 
-        left = tf.decode_raw(example['left'],tf.uint8)
+        left = tf.Print(tf.decode_raw(example['left'],tf.uint8),
+                        [[]], "Loaded record")
         left = tf.reshape(left,(patch_size,patch_size,channels))
         right = tf.decode_raw(example['right'],tf.uint8)
         right = tf.reshape(right,(patch_size,max_disparity+patch_size,channels))
@@ -288,11 +291,21 @@ def example_queue(data_dir,
                           shuffle=shuffle)
 
 if __name__ == "__main__":
-    op = example_queue("luonet_data/training",100)
+    left,right,label = example_queue("luonet_data/training",100)
+    op = tf.reduce_sum(left)
     with tf.Session() as sess:
-        sess.run(op)
+        coord = tf.train.Coordinator()
+
         writer = tf.summary.FileWriter("luoin_logs", graph=sess.graph)
+        sess.run(tf.local_variables_initializer())
+        sess.run(tf.global_variables_initializer())
+        threads = tf.train.start_queue_runners(coord=coord)
         summarize = lambda s: None if s is None else writer.add_summary(sess.run(s))
         summarize(tf.summary.merge_all())
+        
+        sess.run(op)
+
+        coord.request_stop()
+        coord.join(threads)
         writer.close()
 
