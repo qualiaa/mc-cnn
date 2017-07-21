@@ -11,9 +11,7 @@ from operator import add, truth
 from functools import reduce
 from itertools import repeat
 
-string_flag("kitti_root", "kitti_stereo_2012",
-            """Relative path from execution dir to KITTI dataset.""")
-string_flag("infile_regex", "(\d{6})_10.png",
+string_flag("infile_regex", "(\d{6})_10.tfrecord",
             """Regular expression describing input image filenames.""")
 int_flag('queue_threads', 1,
          """Number of CPU threads for queuing examples.""")
@@ -35,20 +33,12 @@ bool_flag('shuffle', True,
 
 min_after_dequeue = 1000
 
-def _random_sign(shape=[], name = None):
-    with tf.name_scope(name or "random_sign"):
-        val =  tf.random_uniform(shape,
-                minval=0,
-                maxval=2,
-                dtype=tf.int64, name="random_sign")*2-1
-    return val
-
 
 def _sorted_file_lists(data_dir, sub_dirs):
     """ convert a list of dataset folders into a list of lists of files from
     those folders matching a regex """
     # file_lists is a list of possibly many directory listings
-    file_lists = [os.listdir(os.path.join(FLAGS.kitti_root, data_dir, sub_dir))
+    file_lists = [os.listdir(os.path.join(data_dir, sub_dir))
             for sub_dir in sub_dirs]
 
     # replace filename strings with regex Match instances
@@ -68,7 +58,7 @@ def _sorted_file_lists(data_dir, sub_dirs):
     # (can transpose here using sort_key as pivot)
 
     # convert back to filenames with full paths
-    match_to_path = lambda m,d: os.path.join(FLAGS.kitti_root, data_dir, d, m.string)
+    match_to_path = lambda m,d: os.path.join(data_dir, d, m.string)
     file_lists = [[*map(match_to_path, l, repeat(sub_dir))]
             for l, sub_dir
             in zip(file_lists, sub_dirs)]
@@ -81,67 +71,51 @@ def _sorted_file_lists(data_dir, sub_dirs):
 
     return file_lists
 
-def kitti_filename_queue(data_dir, capacity=30, shuffle=True, num_epochs=None):
-    """ produce FIFOQueue which produces ground truth, left and right
-    images paths in order
+def _sorted_file_list(data_dir):
+    # file_lists is a list of possibly many directory listings
+    file_list = os.listdir(data_dir)
 
-    similar to string_input_producer, but for a 2D string tensor
-    https://www.tensorflow.org/api_docs/python/tf/train/string_input_producer
-    https://github.com/tensorflow/tensorflow/blob/r1.1/tensorflow/python/training/input.py#L174
-    """
+    # replace filename strings with regex Match instances
+    file_list = [re.fullmatch(FLAGS.infile_regex, f) for f in file_list]
 
-    with tf.name_scope("filename_queue"):
+    # remove non-matches
+    file_list = filter(truth,file_list)
 
-        sub_dirs = ["disp_occ","image_0","image_1"]
-        files = _sorted_file_lists(data_dir,sub_dirs)
+    # sort 
+    def sort_key(m):
+        """ sort the matches by the concatenated integer groups """
+        return int(reduce(add,m.groups()))
+    file_list = sorted(file_list, key=sort_key)
 
-        if shuffle:
-            files = tf.random_shuffle(files)
+    # convert back to filenames with full paths
+    file_list = [os.path.join(data_dir,m.string) for m in file_list]
 
-        files = tf.train.limit_epochs(files, num_epochs)
+    return file_list
 
-
-        files = tf.reshape(files, [-1], name="flatten")
-
-        q = tf.FIFOQueue(capacity, [tf.string])
-        enq = q.enqueue_many(files)
-        tf.train.add_queue_runner(
-                tf.train.QueueRunner(q, [enq]))
-
-    return q
-
-def read_stereo_pair(filename_queue, channels=1):
+def read_record_file(filename_queue,patch_size=9,max_disparity=128,channels=1):
     """ Reads filenames from a queue three at a time to acquire pair + ground
         truth. Assumes order is [ground_truth, left image, right image]
     """
     with tf.name_scope("load_files"):
-        reader = tf.WholeFileReader()
-        def read_image(channels, dtype=tf.uint8,name=None):
-            with tf.name_scope(name or "read_png"):
-                key, png = reader.read(filename_queue)
-                uint_image = tf.image.decode_png(png,channels=channels,
-                                                     dtype=dtype)
-                float_image = tf.to_float(uint_image)
-            return float_image
+        reader = tf.TFRecordReader()
+        key, record = reader.read(filename_queue)
+        example = tf.parse_single_example(record, features={
+                'left': tf.FixedLenFeature((),tf.string),
+                'right': tf.FixedLenFeature((),tf.string),
+                'label': tf.FixedLenFeature((128),tf.float32)
+            })
 
-        gt = read_image(channels=1,dtype=tf.uint16,name="ground_truth")/256
-        gt = tf.squeeze(gt)
-        gt = tf.to_int64(tf.round(gt))
-        with tf.control_dependencies([gt]):
-            l = read_image(channels,name="left_image")
-            with tf.control_dependencies([l]):
-                r = tf.Print(read_image(channels,name="right_image"),
-                        [[]],"Loaded next stereo pair")
+        left = tf.decode_raw(example['left'],tf.uint8)
+        left = tf.reshape(left,(patch_size,patch_size,channels))
+        right = tf.decode_raw(example['right'],tf.uint8)
+        right = tf.reshape(right,(patch_size,max_disparity+patch_size,channels))
+        label = example['label']
 
-        """
-        tf.summary.image("ground_truth",tf.to_float(tf.expand_dims(tf.expand_dims(gt,0),3)))
-        tf.summary.image("left_image",tf.expand_dims(l,0))
-        tf.summary.image("right_image",tf.expand_dims(r,0))
-        """
+        tf.summary.image("label",tf.expand_dims(tf.expand_dims(label,0),0))
+        tf.summary.image("left_image",tf.to_float(tf.expand_dims(left,0)))
+        tf.summary.image("right_image",tf.to_float(tf.expand_dims(right,0)))
 
-    stereo_pair = (l,r)
-
-    return stereo_pair, gt
+    return (left,right), label
 
 def examples_from_stereo_pair(stereo_pair, gt, max_disparity=128, patch_size=9, channels=1):
     pass
@@ -161,8 +135,10 @@ def examples_from_stereo_pair(stereo_pair, gt, max_disparity=128, patch_size=9, 
         l,r = [normalize(i) for i in [l, r]]
 
         def extract_patches(t, height=patch_size, width=patch_size, name=None):
-            """ take [x,y,channel] image
+"""
+"""         take [x,y,channel] image
             return [x,y,patch_size*patch_size*channels] patches """
+"""
             with tf.name_scope(name or "extract_patches"):
                 patch_dims = [1, height, width, channels]
                 strides = [1, 1, 1, channels]
@@ -174,8 +150,10 @@ def examples_from_stereo_pair(stereo_pair, gt, max_disparity=128, patch_size=9, 
             return patches
 
         def reshape_patches(p, height=patch_size, width=patch_size):
-            """ take[x,y,patch_size*patch_size*channels] patches and
+"""
+"""         take [x,y,patch_size*patch_size*channels] patches and
             return [x*y,patch_width,patch_width,channels] """
+"""
             return tf.reshape(p, [-1, height, width, channels])
 
         right_patch_width = max_disparity + patch_size
@@ -256,52 +234,65 @@ def examples_from_stereo_pair(stereo_pair, gt, max_disparity=128, patch_size=9, 
         #tf.summary.image("left_patches",left_patches)
         #tf.summary.image("pos_patches",pos_patches)
         #tf.summary.image("neg_patches",neg_patches)
-        """
 
     return examples,labels
+        """
 
-def batch_examples(examples,labels,
+def batch_examples(left,right,labels,
         batch_size,
+        patch_size=9,
+        max_disparity=128,
         shuffle=False,
-        channels=1,
-        window_size=9,
-        enqueue_many=True):
-    input_tensor=[examples,labels]
-    kwargs={"shapes":[[2,window_size,window_size,channels],[2]],
-            "capacity":(min_after_dequeue + (FLAGS.batch_size *1.1) *
+        channels=1):
+
+    input_tensor=[left,right,labels]
+    kwargs={"shapes":[(patch_size,patch_size,channels),
+                      (patch_size,patch_size+max_disparity,channels),
+                      (max_disparity)],
+            "capacity":(min_after_dequeue + (FLAGS.batch_size * 1.1) *
                 FLAGS.queue_threads),
-            "enqueue_many":enqueue_many,
+            "enqueue_many":False,
             "batch_size":batch_size,
             "num_threads":FLAGS.queue_threads}
 
     with tf.name_scope("example_batches"):
         if shuffle:
-            example_batch, label_batch = tf.train.shuffle_batch(
+            batch = tf.train.shuffle_batch(
                     input_tensor,
                     min_after_dequeue=min_after_dequeue,
                     **kwargs)
-            return example_batch, label_batch
+            return batch
         else:
-            example_batch, label_batch = tf.train.batch(
+            batch = tf.train.batch(
                     input_tensor,
                     **kwargs)
-            return example_batch, label_batch
+            return batch
 
 def example_queue(data_dir,
         batch_size,
         shuffle=True,
         num_epochs=None,
         patch_size=9,
+        max_disparity=128,
         color_channels=1):
-    filename_queue = kitti_filename_queue(data_dir,
-                                          shuffle=shuffle,
-                                          num_epochs=num_epochs)
-    stereo_pair, gt = read_stereo_pair(filename_queue,channels=color_channels)
-    examples, labels = examples_from_stereo_pair(stereo_pair,gt,
-                                                 channels=color_channels)
-    return batch_examples(examples,labels,batch_size,shuffle=shuffle)
+    filenames = _sorted_file_list(data_dir)
+    filename_queue = tf.train.string_input_producer(filenames,
+                                                    shuffle=shuffle,
+                                                    num_epochs=num_epochs)
+    examples, labels = read_record_file(filename_queue,
+                                        patch_size=patch_size,
+                                        max_disparity=max_disparity)
+    return batch_examples(*examples,labels,batch_size,
+                          patch_size=patch_size,
+                          max_disparity=max_disparity,
+                          shuffle=shuffle)
 
 if __name__ == "__main__":
-    op = example_queue("training",100)
+    op = example_queue("luonet_data/training",100)
     with tf.Session() as sess:
         sess.run(op)
+        writer = tf.summary.FileWriter("luoin_logs", graph=sess.graph)
+        summarize = lambda s: None if s is None else writer.add_summary(sess.run(s))
+        summarize(tf.summary.merge_all())
+        writer.close()
+
