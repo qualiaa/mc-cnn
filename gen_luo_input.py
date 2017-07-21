@@ -12,7 +12,6 @@ import math
 import matplotlib.cm
 import matplotlib.pyplot as plt
 import random as rand
-import png
 import time
 
 import tensorflow as tf
@@ -20,7 +19,7 @@ import tensorflow as tf
 patch_size = 9
 max_disparity = 128
 input_dir = "kitti_stereo_2012"
-output_dir = "luo_data"
+output_dir = "luonet_data"
 infile_regex = "(\d{6})_10.png"
 
 output_compression = tf.python_io.TFRecordCompressionType.ZLIB
@@ -85,10 +84,6 @@ def extract_patches(image,patch_shape,patch_offset=None,sentinel=0,dtype=None):
                                         x-hs[1]+po[1]:x+hs[1]+po[1]+1]
             else:
                 # input patch coords
-                """
-                print("r0: {}, {}".format(x0,y0))
-                print("r1: {}, {}".format(x1,y1))
-                """
                 iy0 = max(y0,0); ix0 = max(x0,0)
                 iy1 = min(y1+1,image.shape[0])
                 ix1 = min(x1+1,image.shape[1])
@@ -110,24 +105,8 @@ def extract_patches(image,patch_shape,patch_offset=None,sentinel=0,dtype=None):
                 elif x1_edge:
                     ox1 = dx
 
-                """
-                print("dr: {}, {}".format(dx,dy))
-                print("In coords: {}, {} to {}, {}".format(ix0,iy0,ix1,iy1))
-                print("Out coords: {}, {} to {}, {}".format(ox0,oy0,ox1,oy1))
-                """
-
                 output[y,x,oy0:oy1,ox0:ox1] = image[iy0:iy1,ix0:ix1]
 
-
-                """
-                for py in np.arange(patch_shape[0]):
-                    for px in np.arange(patch_shape[1]):
-                        iy,ix = (py-hs[0]-1,px-hs[1]-1)
-                        try:
-                            output[y,x,py,px] = image[y+iy,x+ix]
-                        except IndexError:
-                            pass
-                """
     return output
 
 def display(left_patches,right_patches,labels):
@@ -190,18 +169,10 @@ def generate_examples_and_labels(gt,left,right, patch_size):
 
     return left_patches,right_patches,labels
 
-# write_png = imsave
 def write_png(path,arr):
     with open(path, "wb") as f:
         w = png.Writer(*arr.shape[::-1],greyscale=True)
         w.write(f,arr)
-
-def write_example(example,path):
-    left,right,label=example
-    #write_png(path.format(str(instance_count),"left"),left)
-    #write_png(path.format(str(instance_count),"right"),right)
-    #write_png(path.format(str(instance_count),"label"),
-           #np.expand_dims(label,axis=0))
 
 def _float_feature(value):
     return tf.train.Feature(float_list=tf.train.FloatList(value=[value]))
@@ -249,8 +220,6 @@ if __name__ == "__main__":
                     examples_and_labels = zip(*examples_and_labels)
                     for left_patch,right_patch,label in examples_and_labels:
                         instance_count += 1
-                        #path = os.path.join(folder,"{}_{}.png")
-                        #write_example(example,path)
                         features = tf.train.Features(feature={
                             'left': _bytes_feature(left_patch.tobytes()),
                             'right': _bytes_feature(right_patch.tobytes()),
