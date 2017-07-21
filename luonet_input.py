@@ -99,7 +99,10 @@ def read_record_file(filename_queue,patch_size=9,max_disparity=128,channels=1):
         truth. Assumes order is [ground_truth, left image, right image]
     """
     with tf.name_scope("load_files"):
-        reader = tf.TFRecordReader()
+        compression = tf.python_io.TFRecordCompressionType.ZLIB
+        options = tf.python_io.TFRecordOptions(compression)
+
+        reader = tf.TFRecordReader(options=options)
         key, record = reader.read(filename_queue)
         example = tf.parse_single_example(record, features={
                 'left': tf.FixedLenFeature((),tf.string),
@@ -114,11 +117,12 @@ def read_record_file(filename_queue,patch_size=9,max_disparity=128,channels=1):
         right = tf.reshape(right,(patch_size,max_disparity+patch_size,channels))
         label = example['label']
 
-        tf.summary.image("label",tf.expand_dims(tf.expand_dims(label,0),0))
-        tf.summary.image("left_image",tf.to_float(tf.expand_dims(left,0)))
-        tf.summary.image("right_image",tf.to_float(tf.expand_dims(right,0)))
+        ed = tf.expand_dims
+        tf.summary.image("label",ed(ed(ed(label,1),0),0))
+        tf.summary.image("left_image",tf.to_float(ed(left,0)))
+        tf.summary.image("right_image",tf.to_float(ed(right,0)))
 
-    return (left,right), label
+        return (left,right), label
 
 def batch_examples(left,right,labels,
         batch_size,
@@ -172,6 +176,7 @@ def example_queue(data_dir,
 if __name__ == "__main__":
     left,right,label = example_queue("luonet_data/training",100)
     op = tf.reduce_sum(left)
+    #op = example_queue("luonet_data/training",100)
     with tf.Session() as sess:
         coord = tf.train.Coordinator()
 
@@ -179,10 +184,11 @@ if __name__ == "__main__":
         sess.run(tf.local_variables_initializer())
         sess.run(tf.global_variables_initializer())
         threads = tf.train.start_queue_runners(coord=coord)
-        summarize = lambda s: None if s is None else writer.add_summary(sess.run(s))
-        summarize(tf.summary.merge_all())
+
+        summary_op = tf.summary.merge_all()
+        writer.add_summary(sess.run(summary_op))
         
-        sess.run(op)
+        print(sess.run(op))
 
         coord.request_stop()
         coord.join(threads)
