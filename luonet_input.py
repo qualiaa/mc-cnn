@@ -11,6 +11,8 @@ from operator import add, truth
 from functools import reduce
 from itertools import repeat
 
+string_flag("data_root", "luonet_data",
+            """Relative path from execution dir to KITTI dataset.""")
 string_flag("infile_regex", "(\d{6})_10.tfrecord",
             """Regular expression describing input image filenames.""")
 int_flag('queue_threads', 1,
@@ -38,7 +40,7 @@ def _sorted_file_lists(data_dir, sub_dirs):
     """ convert a list of dataset folders into a list of lists of files from
     those folders matching a regex """
     # file_lists is a list of possibly many directory listings
-    file_lists = [os.listdir(os.path.join(data_dir, sub_dir))
+    file_lists = [os.listdir(os.path.join(FLAGS.data_root, data_dir, sub_dir))
             for sub_dir in sub_dirs]
 
     # replace filename strings with regex Match instances
@@ -73,7 +75,7 @@ def _sorted_file_lists(data_dir, sub_dirs):
 
 def _sorted_file_list(data_dir):
     # file_lists is a list of possibly many directory listings
-    file_list = os.listdir(data_dir)
+    file_list = os.listdir(os.path.join(FLAGS.data_root,data_dir))
 
     # replace filename strings with regex Match instances
     file_list = [re.fullmatch(FLAGS.infile_regex, f) for f in file_list]
@@ -107,13 +109,15 @@ def read_record_file(filename_queue,patch_size=9,max_disparity=128,channels=1):
         example = tf.parse_single_example(record, features={
                 'left': tf.FixedLenFeature((),tf.string),
                 'right': tf.FixedLenFeature((),tf.string),
-                'label': tf.FixedLenFeature((128),tf.float32)
+                'label': tf.FixedLenFeature((max_disparity),tf.float32)
             })
 
         left = tf.Print(tf.decode_raw(example['left'],tf.uint8),
                         [[]], "Loaded record")
         left = tf.reshape(left,(patch_size,patch_size,channels))
+        left = tf.to_float(left)
         right = tf.decode_raw(example['right'],tf.uint8)
+        right = tf.to_float(right)
         right = tf.reshape(right,(patch_size,max_disparity+patch_size,channels))
         label = example['label']
 
@@ -122,7 +126,10 @@ def read_record_file(filename_queue,patch_size=9,max_disparity=128,channels=1):
         tf.summary.image("left_image",tf.to_float(ed(left,0)))
         tf.summary.image("right_image",tf.to_float(ed(right,0)))
 
-        return (left,right), label
+        #label = tf.Print(label,[tf.shape(label)],"")
+        print(label.shape)
+
+        return left,right,label
 
 def batch_examples(left,right,labels,
         batch_size,
@@ -165,18 +172,18 @@ def example_queue(data_dir,
     filename_queue = tf.train.string_input_producer(filenames,
                                                     shuffle=shuffle,
                                                     num_epochs=num_epochs)
-    examples, labels = read_record_file(filename_queue,
-                                        patch_size=patch_size,
-                                        max_disparity=max_disparity)
-    return batch_examples(*examples,labels,batch_size,
+    input_data = read_record_file(filename_queue,
+                                  patch_size=patch_size,
+                                  max_disparity=max_disparity)
+    return batch_examples(*input_data,batch_size,
                           patch_size=patch_size,
                           max_disparity=max_disparity,
                           shuffle=shuffle)
 
 if __name__ == "__main__":
-    left,right,label = example_queue("luonet_data/training",100)
+    left,right,label = example_queue("training",100)
     op = tf.reduce_sum(left)
-    #op = example_queue("luonet_data/training",100)
+    #op = example_queue("training",100)
     with tf.Session() as sess:
         coord = tf.train.Coordinator()
 
