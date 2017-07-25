@@ -4,7 +4,7 @@ from operator import truth, add
 from functools import reduce
 from itertools import repeat
 import numpy as np
-from scipy.misc import imread,imsave
+from scipy.misc import imread
 from sklearn.feature_extraction.image import extract_patches_2d
 import os, os.path
 import re
@@ -62,7 +62,7 @@ def _sorted_file_lists(path, sub_dirs):
 
     return file_lists
 
-def extract_patches(image,patch_shape,patch_offset=None,sentinel=0,dtype=None):
+def extract_patches(image,patch_shape,patch_offset=None,sentinel=0,dtype=None,dbg=False):
     if dtype is None: dtype = image.dtype
     if patch_offset is None: patch_offset = np.zeros_like(patch_shape)
 
@@ -77,11 +77,14 @@ def extract_patches(image,patch_shape,patch_offset=None,sentinel=0,dtype=None):
         for x in np.arange(output_shape[1]):
             y0 = y - hs[0] + po[0]; y1 = y + hs[0] + po[0]
             x0 = x - hs[1] + po[1]; x1 = x + hs[1] + po[1]
+            if patch_shape[0] % 2 == 0: y0 += 1
+            if patch_shape[1] % 2 == 0: x0 += 1
+
             y0_edge = y0 < 0; x0_edge = x0 < 0
             y1_edge = y1 >= image.shape[0]; x1_edge = x1 >= image.shape[1]
+
             if not (x0_edge or x1_edge or y0_edge or y1_edge):
-                output[y,x,:,:] = image[y-hs[0]+po[0]:y+hs[0]+po[0]+1,
-                                        x-hs[1]+po[1]:x+hs[1]+po[1]+1]
+                output[y,x,:,:] = image[y0:y1+1, x0:x1+1]
             else:
                 # input patch coords
                 iy0 = max(y0,0); ix0 = max(x0,0)
@@ -90,20 +93,34 @@ def extract_patches(image,patch_shape,patch_offset=None,sentinel=0,dtype=None):
                 dy = iy1-iy0
                 dx = ix1-ix0
 
-
                 # output patch coords
                 oy0 = ox0 = 0
                 oy1, ox1 = patch_shape
                 if y0_edge:
+                    dbg and print("y0 edge")
                     oy0 = patch_shape[0] - dy
                     oy1 = patch_shape[0]
                 elif y1_edge:
+                    dbg and print("y1 edge")
                     oy1 = dy
                 if x0_edge:
+                    dbg and print("x0 edge")
                     ox0 = patch_shape[1] - dx
                     ox1 = patch_shape[1]
                 elif x1_edge:
+                    dbg and print("x1 edge")
                     ox1 = dx
+
+                if dbg:
+                    print(patch_shape)
+                    print(image.shape)
+                    print ("r: {}, {}".format(x,y))
+                    print ("x-range: {}, {}".format(x0,x1))
+                    print ("y-range: {}, {}".format(y0,y1))
+                    print ("ri: {}, {} to {}, {}".format(ix0,iy0,ix1,iy1))
+                    print ("ro: {}, {} to {}, {}".format(ox0,oy0,ox1,oy1))
+                    print ("dr: {}, {}".format(dx,dy))
+                    print("="*30)
 
                 output[y,x,oy0:oy1,ox0:ox1] = image[iy0:iy1,ix0:ix1]
 
@@ -111,13 +128,14 @@ def extract_patches(image,patch_shape,patch_offset=None,sentinel=0,dtype=None):
 
 def display(left_patches,right_patches,labels):
     print("Displaying image")
+
     def one_example(left,right,label):
         gt = right.shape[1]-label.argmax()
         fig = plt.figure()
         ax=plt.subplot(311)
-        ax.imshow(left,vmin=0,vmax=1,cmap=matplotlib.cm.gray)
+        ax.imshow(left,vmin=0,vmax=255,cmap=matplotlib.cm.gray)
         ax=plt.subplot(312)
-        ax.imshow(right,vmin=0,vmax=1,cmap=matplotlib.cm.gray)
+        ax.imshow(right,vmin=0,vmax=255,cmap=matplotlib.cm.gray)
         ax.axvline(x=gt,c="red")
 
         ax=plt.subplot(313)
@@ -131,9 +149,9 @@ def display(left_patches,right_patches,labels):
 
 
 
-def generate_examples_and_labels(gt,left,right, patch_size):
-    right_patch_width = patch_size + max_disparity
-    right_patch_offset = -right_patch_width//2 + patch_size//2
+def generate_examples_and_labels(gt,left_image,right_image, patch_size):
+    right_patch_width = (patch_size - 1) + max_disparity
+    right_patch_offset = -(right_patch_width+1)//2 + patch_size//2 + 1
 
     x = np.meshgrid(range(gt.shape[1]),range(gt.shape[0]))[0]
     valid_gt_mask = np.logical_and(gt != 0,gt <= x,gt < max_disparity)
@@ -141,12 +159,12 @@ def generate_examples_and_labels(gt,left,right, patch_size):
 
     gt_vals = gt[valid_gt_mask]
     del gt
-    left_patches=extract_patches(left,
+    left_patches=extract_patches(left_image,
                                  (patch_size,patch_size))
-    right_patches=extract_patches(right,
+    right_patches=extract_patches(right_image,
                                   (patch_size,right_patch_width),
                                   (0, right_patch_offset))
-    del left,right
+    del left_image,right_image
     left_patches_new = left_patches[valid_gt_mask]
     del left_patches; left_patches = left_patches_new
     right_patches_new = right_patches[valid_gt_mask]
@@ -160,12 +178,11 @@ def generate_examples_and_labels(gt,left,right, patch_size):
     for i,val in enumerate(gt_vals):
         if val-2 >= 0 and val-2<max_disparity: labels[i,val-2] = l2
         if val-1 >= 0 and val-1<max_disparity: labels[i,val-1] = l1
-        if val < max_disparity: labels[i,val] = l0
-        if val+1 < max_disparity: labels[i,val+1] = l1
-        if val+2 < max_disparity: labels[i,val+2] = l2
+        if val   < max_disparity:              labels[i,val]   = l0
+        if val+1 < max_disparity:              labels[i,val+1] = l1
+        if val+2 < max_disparity:              labels[i,val+2] = l2
 
     #display(left_patches,right_patches,labels)
-    #input()
 
     return left_patches,right_patches,labels
 
