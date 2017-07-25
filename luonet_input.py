@@ -60,7 +60,7 @@ def _sorted_file_lists(data_dir, sub_dirs):
     # (can transpose here using sort_key as pivot)
 
     # convert back to filenames with full paths
-    match_to_path = lambda m,d: os.path.join(data_dir, d, m.string)
+    match_to_path = lambda m,d: os.path.join(FLAGS.data_root, data_dir, d, m.string)
     file_lists = [[*map(match_to_path, l, repeat(sub_dir))]
             for l, sub_dir
             in zip(file_lists, sub_dirs)]
@@ -90,7 +90,7 @@ def _sorted_file_list(data_dir):
     file_list = sorted(file_list, key=sort_key)
 
     # convert back to filenames with full paths
-    file_list = [os.path.join(data_dir,m.string) for m in file_list]
+    file_list = [os.path.join(FLAGS.data_root, data_dir,m.string) for m in file_list]
     print(file_list)
 
 
@@ -112,13 +112,14 @@ def read_record_file(filename_queue,patch_size=9,max_disparity=128,channels=1):
                 'label': tf.FixedLenFeature((max_disparity),tf.float32)
             })
 
+        right_patch_width = (patch_size - 1) + max_disparity
         left = tf.Print(tf.decode_raw(example['left'],tf.uint8),
                         [[]], "Loaded record")
         left = tf.reshape(left,(patch_size,patch_size,channels))
         left = tf.to_float(left)
         right = tf.decode_raw(example['right'],tf.uint8)
         right = tf.to_float(right)
-        right = tf.reshape(right,(patch_size,max_disparity+patch_size,channels))
+        right = tf.reshape(right,(patch_size,right_patch_width,channels))
         label = example['label']
 
         ed = tf.expand_dims
@@ -140,7 +141,7 @@ def batch_examples(left,right,labels,
 
     input_tensor=[left,right,labels]
     kwargs={"shapes":[(patch_size,patch_size,channels),
-                      (patch_size,patch_size+max_disparity,channels),
+                      (patch_size,(patch_size-1)+max_disparity,channels),
                       (max_disparity)],
             "capacity":(min_after_dequeue + (FLAGS.batch_size * 1.1) *
                 FLAGS.queue_threads),
