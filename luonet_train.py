@@ -44,7 +44,15 @@ def train():
                 "training",FLAGS.batch_size,shuffle=FLAGS.shuffle,
                                             num_epochs=FLAGS.num_epochs)
         
+
         logits = luonet.inference(left_examples,right_examples)
+
+        ed = tf.expand_dims
+        tf.summary.image("left_examples",left_examples)
+        tf.summary.image("right_examples",right_examples)
+        tf.summary.image("correct_label",ed(ed(labels,2),1))
+        tf.summary.image("output_label",tf.transpose(tf.nn.softmax(logits),
+                                                     [0,1,3,2]))
 
         loss = luonet.loss(logits,labels)
         train_op = luonet.train(loss,global_step)
