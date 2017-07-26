@@ -24,7 +24,7 @@ int_flag("l1", 0.2,
          """1px error probability. Probabilities must sum to 1.""")
 int_flag("l2", 0.05,
          """2px error probability. Probabilities must sum to 1.""")
-int_flag('batch_size', 128,
+int_flag('batch_size', 100,
          """Number of examples per batch.""")
 bool_flag("low_gpu_mem", False,
           """Reduce the amount of data stored on the GPU, reducing """
@@ -113,8 +113,7 @@ def read_record_file(filename_queue,patch_size=9,max_disparity=128,channels=1):
             })
 
         right_patch_width = (patch_size - 1) + max_disparity
-        left = tf.Print(tf.decode_raw(example['left'],tf.uint8),
-                        [[]], "Loaded record")
+        left = tf.decode_raw(example['left'],tf.uint8)
         left = tf.reshape(left,(patch_size,patch_size,channels))
         left = tf.to_float(left)
         right = tf.decode_raw(example['right'],tf.uint8)
