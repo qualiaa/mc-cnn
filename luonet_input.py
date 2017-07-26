@@ -96,7 +96,8 @@ def _sorted_file_list(data_dir):
 
     return file_list
 
-def read_record_file(filename_queue,patch_size=9,max_disparity=128,channels=1):
+def read_record_file(filename_queue,patch_size=9,max_disparity=128,channels=1,
+        normalize=True):
     """ Reads filenames from a queue three at a time to acquire pair + ground
         truth. Assumes order is [ground_truth, left image, right image]
     """
@@ -114,12 +115,15 @@ def read_record_file(filename_queue,patch_size=9,max_disparity=128,channels=1):
 
         right_patch_width = (patch_size - 1) + max_disparity
         left = tf.decode_raw(example['left'],tf.uint8)
-        left = tf.reshape(left,(patch_size,patch_size,channels))
         left = tf.to_float(left)
+        left = tf.reshape(left,(patch_size,patch_size,channels))
         right = tf.decode_raw(example['right'],tf.uint8)
         right = tf.to_float(right)
         right = tf.reshape(right,(patch_size,right_patch_width,channels))
         label = example['label']
+        if normalize:
+            left = left/255.0
+            right = right/255.0
 
         ed = tf.expand_dims
         tf.summary.image("label",ed(ed(ed(label,1),0),0))
