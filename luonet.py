@@ -106,7 +106,7 @@ def _flatten(input_):
     return tf.reshape(input_,[tf.shape(input_)[0],-1], name="flatten")
 
 def inference(left, right, channels=1):
-    with tf.name_scope("tied_layers"):
+    with tf.name_scope("inference"):
         def tied_layers(input_):
             with tf.name_scope("conv1"):
                 bias = _bias_variable(64)
@@ -125,19 +125,18 @@ def inference(left, right, channels=1):
         with tf.name_scope("right"):
             right = tied_layers(right)
 
-    print("output shapes: {} and {}".format(left.shape,right.shape))
-    scalar_prod = tf.matmul(left,right,transpose_b=True)
-    print("scalar prod shape: {}".format(scalar_prod.shape))
-    logits = scalar_prod
+        scalar_prod = tf.matmul(left,right,transpose_b=True)
+        print("output shapes: {} and {}".format(left.shape,right.shape))
+        print("scalar prod shape: {}".format(scalar_prod.shape))
+        logits = scalar_prod
+
 
     return logits
 
 def loss(logits, labels):
-    cross_entropy = (#tf.Print(
-            tf.nn.softmax_cross_entropy_with_logits(logits=logits,
-                                                    labels=labels,
-                                                    name="example_xentropy"))#,
-            #[logits,labels], summarize=10)
+    cross_entropy = tf.nn.softmax_cross_entropy_with_logits(logits=logits,
+                                                            labels=labels,
+                                                            name="xentropy")
     cross_entropy = tf.reduce_mean(cross_entropy)
     tf.add_to_collection("losses", cross_entropy)
 
