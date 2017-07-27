@@ -125,8 +125,8 @@ def read_record_file(filename_queue,patch_size=9,max_disparity=128,channels=1,
             left = left/255.0
             right = right/255.0
 
-        gt = tf.argmax(label,0)
-        right_correct = right[:,gt-4:gt+5]
+        gt = (max_disparity-1) - tf.argmax(label,0) - 4
+        right_correct = right[:,tf.to_int32(gt-4):tf.to_int32(gt+5)]
         ed = tf.expand_dims
         tf.summary.image("label",ed(ed(ed(label,1),0),0))
         tf.summary.image("right_patch_correct",ed(right_correct,0))
