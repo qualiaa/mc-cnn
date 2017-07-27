@@ -32,6 +32,7 @@ def validation():
         with tf.device("/cpu:0"):
             left_examples, right_examples, labels = luonet_input.example_queue(
                     "validation",batch_size,shuffle=False)
+        labels=labels[:,::-1]
 
         logits = luonet.inference(left_examples,right_examples)
         accuracy = luonet.accuracy(logits,labels)
@@ -44,6 +45,7 @@ def train():
                 "training",FLAGS.batch_size,shuffle=FLAGS.shuffle,
                                             num_epochs=FLAGS.num_epochs)
         
+        labels=labels[:,::-1]
 
         logits = luonet.inference(left_examples,right_examples)
 
