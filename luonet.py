@@ -2,6 +2,7 @@
 
 import tensorflow as tf
 from flags import *
+from itertools import repeat
 
 import luonet_input
 
@@ -108,16 +109,17 @@ def _flatten(input_):
 def inference(left, right, channels=1):
     with tf.name_scope("inference"):
         def tied_layers(input_):
-            with tf.name_scope("conv1"):
-                bias = _bias_variable(64)
-                weights = _relu_weight_variable([3,3,channels,64])
-                input_ = _convolve(input_,weights,bias,padding="VALID")
 
-            for i in range(2,5):
-                with tf.name_scope("conv"+str(i)):
+            # first input has `channels` layers, rest are 64
+            in_sizes = [channels, *repeat(64,3)]
+            # last layer `act_fn` is identity
+            act_fns = [*repeat(tf.nn.relu,3), lambda x, name: x]
+
+            for i in range(0,4):
+                with tf.name_scope("conv"+str(i+1)):
                     bias = _bias_variable(64)
-                    weights = _relu_weight_variable([3,3,64,64])
-                    input_ = _convolve(input_,weights,bias,padding="VALID")
+                    weights = _relu_weight_variable([3,3,in_sizes[i],64])
+                    input_ = _convolve(input_,weights,bias,padding="VALID",act_fn=act_fns[i])
             return input_
 
         with tf.name_scope("left"):
