@@ -120,7 +120,7 @@ def read_record_file(filename_queue,patch_size=9,max_disparity=128,channels=1,
         right = tf.decode_raw(example['right'],tf.uint8)
         right = tf.to_float(right)
         right = tf.reshape(right,(patch_size,right_patch_width,channels))
-        label = example['label']
+        label = example['label'][::-1]
         if normalize:
             left = left/255.0
             right = right/255.0
@@ -128,10 +128,12 @@ def read_record_file(filename_queue,patch_size=9,max_disparity=128,channels=1,
         gt = (max_disparity-1) - tf.argmax(label,0) - 4
         right_correct = right[:,tf.to_int32(gt-4):tf.to_int32(gt+5)]
         ed = tf.expand_dims
+        """
         tf.summary.image("label",ed(ed(ed(label,1),0),0))
         tf.summary.image("right_patch_correct",ed(right_correct,0))
         tf.summary.image("left_patch",ed(left,0))
         tf.summary.image("right_patch",ed(right,0))
+        """
 
 
         #label = tf.Print(label,[tf.shape(label)],"")

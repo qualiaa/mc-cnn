@@ -32,7 +32,7 @@ def validation():
         with tf.device("/cpu:0"):
             left_examples, right_examples, labels = luonet_input.example_queue(
                     "validation",batch_size,shuffle=False)
-        labels=labels[:,::-1]
+        #labels=labels[:,::-1]
 
         logits = luonet.inference(left_examples,right_examples)
         accuracy = luonet.accuracy(logits,labels)
@@ -45,16 +45,18 @@ def train():
                 "training",FLAGS.batch_size,shuffle=FLAGS.shuffle,
                                             num_epochs=FLAGS.num_epochs)
         
-        labels=labels[:,::-1]
+        #labels=labels[:,::-1]
 
         logits = luonet.inference(left_examples,right_examples)
 
         ed = tf.expand_dims
+        """
         tf.summary.image("left_examples",left_examples)
         tf.summary.image("right_examples",right_examples)
         tf.summary.image("correct_label",ed(ed(labels,2),1))
         tf.summary.image("output_label",tf.transpose(tf.nn.softmax(logits),
                                                      [0,1,3,2]))
+                                                     """
 
         loss = luonet.loss(logits,labels)
         train_op = luonet.train(loss,global_step)
