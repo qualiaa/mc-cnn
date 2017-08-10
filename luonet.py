@@ -13,6 +13,9 @@ NUM_EPOCHS_PER_DECAY = 350.0      # Epochs after which learning rate decays.
 LEARNING_RATE_DECAY_FACTOR = 0.1  # Learning rate decay factor.
 INITIAL_LEARNING_RATE = 0.1       # Initial learning rate.
 
+float_flag("lr", 0.1,
+           """Number of training batches.""")
+
 def _layer_summary(h,w,b):
     #tf.summary.histogram('biases', b)
     #tf.summary.histogram('weights', w)
@@ -186,7 +189,7 @@ def train(loss, global_step):
     """
 
     #lr = _learning_rate(current_epoch())
-    lr = 0.01
+    lr = FLAGS.lr
 
     loss_averages_op = _loss_summaries(loss)
     with tf.control_dependencies([loss_averages_op]):
