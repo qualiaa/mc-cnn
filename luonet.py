@@ -139,6 +139,7 @@ def inference(left, right, channels=1):
     return logits
 
 def loss(logits, labels):
+    logits += 0.001 # perturbation to prevent nan loss
     cross_entropy = tf.nn.softmax_cross_entropy_with_logits(logits=logits,
                                                             labels=labels,
                                                             name="xentropy")
