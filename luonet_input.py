@@ -91,8 +91,6 @@ def _sorted_file_list(data_dir):
 
     # convert back to filenames with full paths
     file_list = [os.path.join(FLAGS.data_root, data_dir,m.string) for m in file_list]
-    print(file_list)
-
 
     return file_list
 
@@ -122,8 +120,8 @@ def read_record_file(filename_queue,patch_size=9,max_disparity=128,channels=1,
         right = tf.reshape(right,(patch_size,right_patch_width,channels))
         label = example['label'][::-1]
         if normalize:
-            left = left/255.0
-            right = right/255.0
+            left = (left/255.0)*2 - 1
+            right = (right/255.0)*2 - 1
 
         gt = (max_disparity-1) - tf.argmax(label,0) - 4
         right_correct = right[:,tf.to_int32(gt-4):tf.to_int32(gt+5)]
@@ -135,11 +133,9 @@ def read_record_file(filename_queue,patch_size=9,max_disparity=128,channels=1,
         tf.summary.image("right_patch",ed(right,0))
         """
 
+        output = (left,right,label)
 
-        #label = tf.Print(label,[tf.shape(label)],"")
-        print(label.shape)
-
-        return left,right,label
+        return output
 
 def batch_examples(left,right,labels,
         batch_size,
