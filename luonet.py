@@ -146,7 +146,7 @@ def loss(logits, labels):
                                                             """
     # need to check: l aren't all 0
     # could try: manual calculation of softmax, x entropy following +eps
-    tf.Assert(tf.logical_not(tf.all(tf.equal(labels,0),axis=0)),[labels])
+    tf.Assert(tf.logical_not(tf.reduce_all(tf.equal(labels,0),axis=0)),[labels])
     #logits = tf.softmax(logits)
     cross_entropy = tf.nn.cross_entropy_with_logits(logits=logits,
                                                             labels=labels,
