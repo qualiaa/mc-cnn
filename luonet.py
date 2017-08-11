@@ -139,8 +139,16 @@ def inference(left, right, channels=1):
     return logits
 
 def loss(logits, labels):
-    logits += 0.001 # perturbation to prevent nan loss
+    """
     cross_entropy = tf.nn.softmax_cross_entropy_with_logits(logits=logits,
+                                                            labels=labels,
+                                                            name="xentropy")
+                                                            """
+    # need to check: l aren't all 0
+    # could try: manual calculation of softmax, x entropy following +eps
+    tf.Assert(tf.logical_not(tf.all(tf.equal(labels,0),axis=0)),[labels])
+    #logits = tf.softmax(logits)
+    cross_entropy = tf.nn.cross_entropy_with_logits(logits=logits,
                                                             labels=labels,
                                                             name="xentropy")
     cross_entropy = tf.reduce_mean(cross_entropy)
