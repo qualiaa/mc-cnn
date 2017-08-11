@@ -146,15 +146,17 @@ def loss(logits, labels):
                                                             """
     # need to check: l aren't all 0
     # could try: manual calculation of softmax, x entropy following +eps
-    tf.Assert(tf.logical_not(tf.reduce_all(tf.equal(labels,0),axis=0)),[labels])
-    #logits = tf.softmax(logits)
-    cross_entropy = tf.nn.cross_entropy_with_logits(logits=logits,
-                                                            labels=labels,
-                                                            name="xentropy")
-    cross_entropy = tf.reduce_mean(cross_entropy)
-    tf.add_to_collection("losses", cross_entropy)
+    no_empty_labels = tf.Assert(tf.logical_not(tf.reduce_any(tf.reduce_all(tf.equal(labels,0),axis=1))),[labels])
 
-    return tf.add_n(tf.get_collection('losses'), name="total_loss")
+    with tf.control_dependencies([no_empty_labels]):
+        #logits = tf.softmax(logits)
+        cross_entropy = tf.nn.softmax_cross_entropy_with_logits(logits=logits,
+                                                                labels=labels,
+                                                                name="xentropy")
+        cross_entropy = tf.reduce_mean(cross_entropy)
+        tf.add_to_collection("losses", cross_entropy)
+
+        return tf.add_n(tf.get_collection('losses'), name="total_loss")
 
 def accuracy(logits, labels):
     print("labels shape: {}".format(labels.shape))
