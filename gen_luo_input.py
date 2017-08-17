@@ -5,9 +5,9 @@ from functools import reduce
 from itertools import repeat
 import numpy as np
 from scipy.misc import imread
-from sklearn.feature_extraction.image import extract_patches_2d
 import os, os.path
 import re
+import sys
 import math
 import matplotlib.cm
 import matplotlib.pyplot as plt
@@ -19,14 +19,23 @@ import tensorflow as tf
 patch_size = 9
 max_disparity = 128
 input_dir = "kitti_stereo_2012"
-output_dir = "luonet_data"
+output_root = "luonet_data3"
 infile_regex = "(\d{6})_10.png"
 
 output_compression = tf.python_io.TFRecordCompressionType.ZLIB
 output_options = tf.python_io.TFRecordOptions(output_compression)
 
-datasets = ["testing","training","validation"]
+dataset_names = ["testing","training","validation"]
 subdirs = ["disp_occ","image_0","image_1"]
+
+def _float_feature(value):
+    return tf.train.Feature(float_list=tf.train.FloatList(value=[value]))
+def _floatlist_feature(value):
+    return tf.train.Feature(float_list=tf.train.FloatList(value=value))
+def _int64_feature(value):
+    return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
+def _bytes_feature(value):
+    return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
 
 def _sorted_file_lists(path, sub_dirs):
     """ convert a list of dataset folders into a list of lists of files from
@@ -62,7 +71,7 @@ def _sorted_file_lists(path, sub_dirs):
 
     return file_lists
 
-def extract_patches(image,patch_shape,patch_offset=None,sentinel=0,dtype=None,dbg=False):
+def extract_patches(image,patch_shape,patch_offset=None,border_val=0,dtype=None,dbg=False):
     if dtype is None: dtype = image.dtype
     if patch_offset is None: patch_offset = np.zeros_like(patch_shape)
 
@@ -71,7 +80,7 @@ def extract_patches(image,patch_shape,patch_offset=None,sentinel=0,dtype=None,db
 
     output_shape = (*image.shape, *patch_shape)
 
-    output = np.full(output_shape,sentinel,dtype)
+    output = np.full(output_shape,border_val,dtype)
 
     for y in np.arange(output_shape[0]):
         for x in np.arange(output_shape[1]):
@@ -149,15 +158,24 @@ def display(left_patches,right_patches,labels):
 
 
 
-def generate_examples_and_labels(gt,left_image,right_image, patch_size):
+def generate_examples_from_inputs(gt,left_image,right_image, patch_size):
     right_patch_width = (patch_size - 1) + max_disparity
     right_patch_offset = -(right_patch_width+1)//2 + patch_size//2 + 1
 
     x = np.meshgrid(range(gt.shape[1]),range(gt.shape[0]))[0]
-    valid_gt_mask = np.logical_and(gt != 0,gt <= x,gt < max_disparity)
+    np_and = np.logical_and
+    valid_gt_mask = np_and(
+            #gt != 0,
+            gt > 2,
+            np_and(gt <= x,gt < max_disparity+1-2))
     del x
 
-    gt_vals = gt[valid_gt_mask]
+    gt_vals = gt[valid_gt_mask] - 1
+
+    invalid_vals = gt_vals[gt_vals>=max_disparity]
+    if invalid_vals:
+        print("Invalid disp. vals: ")
+        print(invalid_vals)
     del gt
     left_patches=extract_patches(left_image,
                                  (patch_size,patch_size))
@@ -182,71 +200,79 @@ def generate_examples_and_labels(gt,left_image,right_image, patch_size):
         if val+1 < max_disparity:              labels[i,val+1] = l1
         if val+2 < max_disparity:              labels[i,val+2] = l2
 
+    invalid_label_mask = abs(np.sum(labels,axis=1) - 1) > sys.float_info.epsilon
+    num_invalid_labels = np.sum(invalid_label_mask)
+    if num_invalid_labels != 0:
+        print("{} invalid labels found, e.g.".format(num_invalid_labels))
+        print(labels[invalid_label_mask][:3,:])
+        print("which sum to")
+        print(np.sum(labels[invalid_label_mask][:3,:],axis=1))
+
     #display(left_patches,right_patches,labels)
 
     return left_patches,right_patches,labels
 
-def write_png(path,arr):
-    with open(path, "wb") as f:
-        w = png.Writer(*arr.shape[::-1],greyscale=True)
-        w.write(f,arr)
+def load_inputs(instance_files):
+    gt = (imread(instance_files[0])/255).astype(np.int16,copy=False)
+    left = imread(instance_files[1])
+    right = imread(instance_files[2])
+    if left.ndim == 3: left = left[:,:,0]
+    if right.ndim == 3: left = left[:,:,0]
+    return gt, left, right
 
-def _float_feature(value):
-    return tf.train.Feature(float_list=tf.train.FloatList(value=[value]))
+def save_outputs(examples,output_path):
+    with tf.python_io.TFRecordWriter(path=output_path,
+                                     options=output_options) as writer:
+        for left_patch,right_patch,label in examples:
+            features = tf.train.Features(feature={
+                'left': _bytes_feature(left_patch.tobytes()),
+                'right': _bytes_feature(right_patch.tobytes()),
+                'label': _floatlist_feature(label)})
+            output = tf.train.Example(features=features)
+            writer.write(output.SerializeToString())
 
-def _floatlist_feature(value):
-    return tf.train.Feature(float_list=tf.train.FloatList(value=value))
+def process_instance(instance_files,output_path):
+    start_time = time.time()
+
+    inputs = load_inputs(instance_files)
+    examples = generate_examples_from_inputs(
+            *inputs,patch_size)
+    print("\tGenerated {} examples".format(len(examples[0])))
+    print("\tSaving to {}".format(output_path))
+    examples = zip(*examples)
+    del inputs
+    save_outputs(examples,output_path)
+    del examples
+
+    duration = time.time()-start_time
+
+    print("\tFinished in {} s".format(duration))
 
 
-def _int64_feature(value):
-    return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
+def process_dataset(dataset_name):
+    output_dir = os.path.join(output_root,dataset_name)
+    os.makedirs(output_dir, mode=0o755, exist_ok=True)
+    if dataset_name != "testing":
+        file_lists = _sorted_file_lists(os.path.join(input_dir,dataset_name),subdirs)
+        current_file_num = 0
 
-def _bytes_feature(value):
-    return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
+        for instance_files in file_lists:
+            current_file_num += 1
+            output_filename=os.path.basename(instance_files[1]).replace(".png",".tfrecord")
+            output_path = os.path.join(output_dir,output_filename)
+
+            if os.access(output_path,os.F_OK):
+                print("Skipping file {}: already exists.".format(current_file_num))
+                continue
+
+            print("Processing file {} out of {}".format(
+                current_file_num, len(file_lists)))
+
+            process_instance(instance_files,output_path)
+    else:
+        pass
 
 if __name__ == "__main__":
-    for dataset in datasets:
-        folder = os.path.join(output_dir,dataset)
-        os.makedirs(folder, mode=0o755, exist_ok=True)
-        if dataset != "testing":
-            file_lists = _sorted_file_lists(os.path.join(input_dir,dataset),subdirs)
-            file_count = 0
-
-            for example_files in file_lists:
-                file_count += 1
-                output_filename=os.path.basename(example_files[1]).replace(".png",".tfrecord")
-                output_path = os.path.join(output_dir,dataset,output_filename)
-                if os.access(output_path,os.F_OK):
-                    continue
-
-                start_time = time.time()
-                print("Processing file {} out of {}".format(file_count,
-                                                            len(file_lists)))
-                gt = (imread(example_files[0])/255).astype(np.int16,copy=False)
-                left = imread(example_files[1])
-                right = imread(example_files[2])
-                if left.ndim == 3: left = left[:,:,0]
-                if right.ndim == 3: left = left[:,:,0]
-                examples_and_labels = generate_examples_and_labels(
-                        gt,left,right,patch_size)
-                del left,right,gt
-
-                instance_count=0
-                with tf.python_io.TFRecordWriter(path=output_path,
-                                                 options=output_options) as writer:
-                    examples_and_labels = zip(*examples_and_labels)
-                    for left_patch,right_patch,label in examples_and_labels:
-                        instance_count += 1
-                        features = tf.train.Features(feature={
-                            'left': _bytes_feature(left_patch.tobytes()),
-                            'right': _bytes_feature(right_patch.tobytes()),
-                            'label': _floatlist_feature(label)})
-                        example = tf.train.Example(features=features)
-                        writer.write(example.SerializeToString())
-                print("Generated {} examples in {} s".format(instance_count,
-                    time.time()-start_time))
-                del examples_and_labels
-
-        else:
-            pass
+    for dataset_name in dataset_names:
+        process_dataset(dataset_name)
 
