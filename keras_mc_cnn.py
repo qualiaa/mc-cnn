@@ -94,11 +94,10 @@ def train(loss, global_step):
 
 def loss(ypred,ytrue):
     from keras.objectives import binary_crossentropy as xentropy
-    op = tf.Print(tf.reduce_mean(xentropy(ytrue, ypred)),
-            [ytrue,ypred])
-    return op
+    return tf.reduce_mean(xentropy(ytrue, ypred))
 
 def accuracy(logits,labels):
-    preds = tf.round(logits)
-    from keras.metrics import categorical_accuracy as accuracy
-    return tf.reduce_mean(accuracy(preds,logits))
+    ypred = tf.cast(tf.round(logits),tf.int32)
+    ytrue = tf.cast(labels,tf.int32)
+    from keras.metrics import binary_accuracy as accuracy
+    return tf.reduce_mean(accuracy(ytrue,ypred))

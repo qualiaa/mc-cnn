@@ -19,6 +19,22 @@ bool_flag('log_device_placement', False,
 bool_flag("conv", False,
          """Use fully convolutional architecture""")
 
+def validation(inference_fn=keras_mc_cnn.inference):
+    # XXX: Very hacky to use large batch rather than full validation set.
+    # Need to look into tf.contrib.data.Dataset for iterable queue
+    batch_size = 100
+    with tf.name_scope("validation"):
+        with tf.device("/cpu:0"):
+            validation_examples, validation_labels = mc_cnn_input.example_queue(
+                    "validation",batch_size,shuffle=False)
+
+        left_examples = validation_examples[:,0,...]
+        right_examples = validation_examples[:,1,...]
+
+        validation_logits = inference_fn(left_examples,right_examples)
+        accuracy = keras_mc_cnn.accuracy(validation_logits,validation_labels)
+    return accuracy
+
 def train():
     """ set session """
 
@@ -41,10 +57,10 @@ def train():
         loss = keras_mc_cnn.loss(logits,labels)
         train_op = keras_mc_cnn.train(loss,global_step)
 
-        #validation_accuracy = validation(inference)
+        validation_accuracy = validation(inference)
 
         hooks = [tf.train.NanTensorHook(loss),
-                 LoggerHook(loss)]
+                 LoggerHook(loss,validation_accuracy)]
         if FLAGS.max_steps:
             hooks.append(tf.train.StopAtStepHook(last_step=FLAGS.max_steps))
 

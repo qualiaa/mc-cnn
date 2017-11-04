@@ -9,8 +9,9 @@ int_flag("validation_steps", 10000,
          """Number of batches between evaluations""")
 
 class LoggerHook(tf.train.SessionRunHook):
-    def __init__(self,loss):
+    def __init__(self,loss,validation = None):
         self._loss = loss
+        self._validation = validation
 
     def begin(self):
         self._step = -1
@@ -48,7 +49,7 @@ class LoggerHook(tf.train.SessionRunHook):
         accuracy = 0
         n_batches = 1000
         for _ in range(n_batches):
-            accuracy += sess.run(validation_accuracy)
+            accuracy += sess.run(self._validation)
         accuracy /= n_batches
         print("Accuracy: {} %".format(100*accuracy))
         with open("accuracy.csv","a") as f:
@@ -58,6 +59,6 @@ class LoggerHook(tf.train.SessionRunHook):
         if self._step % FLAGS.log_frequency == 0:
             self.print_log(run_context,run_values)
 
-        if (self._step+1) % FLAGS.validation_steps == 0:
+        if self._validation is not None and (self._step+1) % FLAGS.validation_steps == 0:
             self.run_validation(run_context,run_values)
 
