@@ -150,15 +150,15 @@ def examples_from_stereo_pair(stereo_pair, gt, patch_size=9, channels=1):
         zero = tf.constant(0, dtype=gt.dtype)
         image_shape = tf.to_int64(tf.shape(gt))
 
-        def normalize(i):
+        def normalize(x):
             with tf.name_scope("normalize"):
-                i = i - tf.reduce_mean(i)
-                i = i / tf.sqrt(tf.reduce_mean(i**2))
-            return i
+                x = x - tf.reduce_mean(x)
+                x = x / tf.sqrt(tf.reduce_mean(x**2))
+            return x
 
         l,r = [normalize(i) for i in [l, r]]
 
-        def extract_patches(t, name=None):
+        def extract_patches(img, name=None):
             """ take [x,y,channel] image
             return [x,y,patch_size*patch_size*channels] patches """
             with tf.name_scope(name or "extract_patches"):
@@ -167,7 +167,7 @@ def examples_from_stereo_pair(stereo_pair, gt, patch_size=9, channels=1):
                 rates = [1, 1, 1, 1]
                 padding = "SAME"
                 patches = tf.extract_image_patches(
-                        tf.expand_dims(t,0), patch_dims, strides, rates, padding)
+                        tf.expand_dims(img,0), patch_dims, strides, rates, padding)
                 patches = tf.squeeze(patches)
             return patches
 
@@ -234,8 +234,8 @@ def examples_from_stereo_pair(stereo_pair, gt, patch_size=9, channels=1):
             negative_examples = tf.stack([left_patches,neg_patches], axis=1)
             examples = tf.concat([positive_examples,negative_examples],axis=0)
 
-            one_v = tf.ones_like(gt_values)
-            zero_v = tf.zeros_like(gt_values)
+            one_v = tf.ones_like(gt_values,dtype=tf.float32)
+            zero_v = tf.zeros_like(gt_values,dtype=tf.float32)
             labels = tf.concat([tf.stack([one_v,zero_v],axis=1),
                                 tf.stack([zero_v,one_v],axis=1)], axis=0)
 
@@ -260,7 +260,7 @@ def batch_examples(examples,labels,
         window_size=9,
         enqueue_many=True):
     input_tensor=[examples,labels]
-    kwargs={"shapes":[[2,window_size,window_size,channels],[2]],
+    kwargs={"shapes":[[2,window_size,window_size,channels],[]],
             "capacity":(min_after_dequeue + (FLAGS.batch_size *1.1) *
                 FLAGS.queue_threads),
             "enqueue_many":enqueue_many,
@@ -308,4 +308,5 @@ def example_queue(data_dir,
     stereo_pair, gt = read_stereo_pair(filename_queue,channels=color_channels)
     examples, labels = examples_from_stereo_pair(stereo_pair,gt,
                                                  channels=color_channels)
+    labels = labels[:,0]
     return batch_examples(examples,labels,batch_size,shuffle=shuffle)
